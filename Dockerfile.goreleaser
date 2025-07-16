@@ -1,0 +1,5 @@
+FROM scratch 
+
+COPY postgres-user-manager /postgres-user-manager
+
+ENTRYPOINT ["/postgres-user-manager"]

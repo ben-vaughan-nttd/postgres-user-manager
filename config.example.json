@@ -1,0 +1,89 @@
+{
+  "users": [
+    {
+      "username": "app_user",
+      "password": "secure_password_123",
+      "groups": ["app_group", "read_only"],
+      "privileges": ["CONNECT"],
+      "databases": ["myapp_db"],
+      "enabled": true,
+      "description": "Application user with password authentication",
+      "auth_method": "password",
+      "can_login": true,
+      "connection_limit": 10
+    },
+    {
+      "username": "iam_app_user",
+      "groups": ["app_group"],
+      "privileges": ["CONNECT"],
+      "databases": ["myapp_db"],
+      "enabled": true,
+      "description": "Application user with IAM authentication",
+      "auth_method": "iam",
+      "iam_role": "arn:aws:iam::123456789012:role/rds-db-role",
+      "can_login": true,
+      "connection_limit": 20
+    },
+    {
+      "username": "readonly_user",
+      "groups": ["read_only"],
+      "privileges": ["CONNECT"],
+      "databases": ["myapp_db", "analytics_db"],
+      "enabled": true,
+      "description": "Read-only user for reports with IAM auth",
+      "auth_method": "iam",
+      "can_login": true
+    },
+    {
+      "username": "service_account",
+      "groups": ["app_group"],
+      "privileges": [],
+      "databases": [],
+      "enabled": true,
+      "description": "Service account - no direct login",
+      "auth_method": "iam",
+      "can_login": false
+    },
+    {
+      "username": "temp_user",
+      "password": "temp_pass",
+      "groups": [],
+      "privileges": [],
+      "databases": [],
+      "enabled": false,
+      "description": "Temporary user - disabled",
+      "auth_method": "password",
+      "can_login": true
+    }
+  ],
+  "groups": [
+    {
+      "name": "app_group",
+      "privileges": ["CONNECT", "TEMPORARY"],
+      "databases": ["myapp_db"],
+      "description": "Main application group",
+      "inherit": true
+    },
+    {
+      "name": "read_only",
+      "privileges": ["CONNECT"],
+      "databases": ["myapp_db", "analytics_db"],
+      "description": "Read-only access group",
+      "inherit": true
+    },
+    {
+      "name": "admin_group",
+      "privileges": ["ALL"],
+      "databases": ["myapp_db"],
+      "description": "Administrative access group",
+      "inherit": true
+    },
+    {
+      "name": "rds_superuser",
+      "privileges": ["CONNECT", "CREATE"],
+      "databases": ["postgres"],
+      "description": "RDS superuser equivalent role",
+      "inherit": true
+    }
+  ]
+}
