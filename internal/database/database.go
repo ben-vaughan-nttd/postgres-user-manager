@@ -18,6 +18,10 @@ type Manager struct {
 	dryRun bool
 }
 
+const (
+  msgDryRunExecuteQuery = "DRY RUN: Would execute query"
+)
+
 // NewManager creates a new database manager with support for IAM authentication
 func NewManager(conn *structs.DatabaseConnection, logger *logrus.Logger, dryRun bool) (*Manager, error) {
 	var connStr string
@@ -96,7 +100,7 @@ func (m *Manager) CreateUser(user *structs.UserConfig) error {
 	query := m.buildCreateUserQuery(user)
 
 	if m.dryRun {
-		m.logger.WithField("query", query).Info("DRY RUN: Would execute query")
+		m.logger.WithField("query", query).Info(msgDryRunExecuteQuery)
 		return nil
 	}
 
@@ -159,7 +163,7 @@ func (m *Manager) grantRDSIAMRole(username string) error {
 	query := fmt.Sprintf("GRANT rds_iam TO %s", m.quoteIdentifier(username))
 	
 	if m.dryRun {
-		m.logger.WithField("query", query).Info("DRY RUN: Would execute query")
+		m.logger.WithField("query", query).Info(msgDryRunExecuteQuery)
 		return nil
 	}
 
@@ -178,7 +182,7 @@ func (m *Manager) revokeRDSIAMRole(username string) error {
 	query := fmt.Sprintf("REVOKE rds_iam FROM %s", m.quoteIdentifier(username))
 	
 	if m.dryRun {
-		m.logger.WithField("query", query).Info("DRY RUN: Would execute query")
+		m.logger.WithField("query", query).Info(msgDryRunExecuteQuery)
 		return nil
 	}
 
@@ -208,7 +212,7 @@ func (m *Manager) DropUser(username string) error {
 	query := fmt.Sprintf("DROP USER %s", m.quoteIdentifier(username))
 
 	if m.dryRun {
-		m.logger.WithField("query", query).Info("DRY RUN: Would execute query")
+		m.logger.WithField("query", query).Info(msgDryRunExecuteQuery)
 		return nil
 	}
 
@@ -245,7 +249,7 @@ func (m *Manager) CreateGroup(group *structs.GroupConfig) error {
 	}
 
 	if m.dryRun {
-		m.logger.WithField("query", query).Info("DRY RUN: Would execute query")
+		m.logger.WithField("query", query).Info(msgDryRunExecuteQuery)
 		return nil
 	}
 
@@ -271,7 +275,7 @@ func (m *Manager) GrantPrivileges(target string, privileges []string, databases 
 				priv, m.quoteIdentifier(db), m.quoteIdentifier(target))
 
 			if m.dryRun {
-				m.logger.WithField("query", query).Info("DRY RUN: Would execute query")
+				m.logger.WithField("query", query).Info(msgDryRunExecuteQuery)
 				continue
 			}
 
@@ -299,7 +303,7 @@ func (m *Manager) RevokePrivileges(target string, privileges []string, databases
 				priv, m.quoteIdentifier(db), m.quoteIdentifier(target))
 
 			if m.dryRun {
-				m.logger.WithField("query", query).Info("DRY RUN: Would execute query")
+				m.logger.WithField("query", query).Info(msgDryRunExecuteQuery)
 				continue
 			}
 
@@ -323,7 +327,7 @@ func (m *Manager) AddUserToGroup(username, groupName string) error {
 	query := fmt.Sprintf("GRANT %s TO %s", m.quoteIdentifier(groupName), m.quoteIdentifier(username))
 
 	if m.dryRun {
-		m.logger.WithField("query", query).Info("DRY RUN: Would execute query")
+		m.logger.WithField("query", query).Info(msgDryRunExecuteQuery)
 		return nil
 	}
 
@@ -348,7 +352,7 @@ func (m *Manager) RemoveUserFromGroup(username, groupName string) error {
 	query := fmt.Sprintf("REVOKE %s FROM %s", m.quoteIdentifier(groupName), m.quoteIdentifier(username))
 
 	if m.dryRun {
-		m.logger.WithField("query", query).Info("DRY RUN: Would execute query")
+		m.logger.WithField("query", query).Info(msgDryRunExecuteQuery)
 		return nil
 	}
 
@@ -365,7 +369,8 @@ func (m *Manager) RemoveUserFromGroup(username, groupName string) error {
 
 // UserExists checks if a user exists in the database
 func (m *Manager) UserExists(username string) (bool, error) {
-	query := "SELECT 1 FROM pg_user WHERE usename = $1"
+	// Use pg_roles instead of pg_user to include both login and nologin users
+	query := "SELECT 1 FROM pg_roles WHERE rolname = $1"
 	
 	var exists int
 	err := m.db.QueryRow(query, username).Scan(&exists)
@@ -399,6 +404,7 @@ func (m *Manager) GroupExists(groupName string) (bool, error) {
 func (m *Manager) GetUserInfo(username string) (*structs.DatabaseUser, error) {
 	user := &structs.DatabaseUser{
 		Username:    username,
+		Groups:      []string{}, // Initialize as empty slice, not nil
 		LastChecked: time.Now(),
 	}
 
