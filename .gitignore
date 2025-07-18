@@ -26,7 +26,33 @@ go.work.sum
 
 # env file
 .env
+.env.local
 
 # Editor/IDE
-# .idea/
-# .vscode/
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Application specific
+build/
+dist/
+postgres-user-manager
+*.log
+
+# Configuration files with sensitive data
+config.json
+
+# Temporary files
+tmp/
+temp/
