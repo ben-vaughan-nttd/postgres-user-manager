@@ -3,7 +3,7 @@ module github.com/ben-vaughan-nttd/postgres-user-manager
 go 1.24.3
 
 require (
-	github.com/lib/pq v1.10.9
+	github.com/lib/pq v1.11.1
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/viper v1.20.1
