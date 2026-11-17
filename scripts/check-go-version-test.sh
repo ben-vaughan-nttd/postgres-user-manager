@@ -9,7 +9,7 @@ trap 'rm -rf "$test_dir"' EXIT HUP INT TERM
 
 "$check_script" "$repository_root/Dockerfile" "$repository_root/go.mod"
 
-sed 's/golang:1.27.4/golang:1.27.3/' "$repository_root/Dockerfile" > "$test_dir/Dockerfile-mismatch"
+sed 's/^FROM golang:[^[:space:]]*/FROM golang:mismatch/' "$repository_root/Dockerfile" > "$test_dir/Dockerfile-mismatch"
 if "$check_script" "$test_dir/Dockerfile-mismatch" "$repository_root/go.mod"; then
 	printf 'Go version self-test failed: mismatch was accepted\n' >&2
 	exit 1
