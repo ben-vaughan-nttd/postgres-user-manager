@@ -75,7 +75,13 @@ func SetupFlexibleTestDatabase(t *testing.T) *FlexibleTestDatabaseSetup {
 
 	port, err := postgresContainer.MappedPort(ctx, "5432")
 	if err != nil {
+		postgresContainer.Terminate(ctx)
 		t.Fatalf("Failed to get container port: %v", err)
+	}
+	portInt, err := mappedPortInt(port)
+	if err != nil {
+		postgresContainer.Terminate(ctx)
+		t.Fatalf("Failed to convert container port: %v", err)
 	}
 
 	// Force IPv4 if host is localhost/127.0.0.1 to avoid IPv6 issues
@@ -83,12 +89,12 @@ func SetupFlexibleTestDatabase(t *testing.T) *FlexibleTestDatabaseSetup {
 		host = "127.0.0.1"
 	}
 
-	t.Logf("Connecting to PostgreSQL at %s:%d", host, port.Int())
+	t.Logf("Connecting to PostgreSQL at %s:%d", host, portInt)
 
 	// Create connection info
 	connInfo := &structs.DatabaseConnection{
 		Host:     host,
-		Port:     port.Int(),
+		Port:     portInt,
 		Database: "testdb",
 		Username: "testuser",
 		Password: "testpass",

@@ -63,10 +63,15 @@ func SetupSimpleTestDatabase(t *testing.T) *SimpleDatabaseSetup {
 		container.Terminate(ctx)
 		t.Fatalf("Failed to get container port: %v", err)
 	}
+	portInt, err := mappedPortInt(port)
+	if err != nil {
+		container.Terminate(ctx)
+		t.Fatalf("Failed to convert container port: %v", err)
+	}
 
 	connInfo := &structs.DatabaseConnection{
 		Host:     host,
-		Port:     port.Int(),
+		Port:     portInt,
 		Database: "testdb",
 		Username: "testuser",
 		Password: "testpass",

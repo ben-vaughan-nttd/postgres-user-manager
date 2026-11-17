@@ -135,17 +135,22 @@ func createSharedContainer(t *testing.T) (*SharedTestContainer, error) {
 		postgresContainer.Terminate(ctx)
 		return nil, err
 	}
+	portInt, err := mappedPortInt(port)
+	if err != nil {
+		postgresContainer.Terminate(ctx)
+		return nil, err
+	}
 
 	// Force IPv4 if host is localhost
 	if host == "localhost" {
 		host = "127.0.0.1"
 	}
 
-	t.Logf("Shared container ready at %s:%d", host, port.Int())
+	t.Logf("Shared container ready at %s:%d", host, portInt)
 
 	connInfo := &structs.DatabaseConnection{
 		Host:     host,
-		Port:     port.Int(),
+		Port:     portInt,
 		Database: "postgres",
 		Username: "testuser",
 		Password: "testpass",
