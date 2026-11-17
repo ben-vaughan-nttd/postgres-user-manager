@@ -1,27 +1,21 @@
 version: 2
 updates:
-  # Enable version updates for Go
+  # Keep Go modules and GitHub Actions updates in one weekly group.
   - package-ecosystem: "gomod"
     directory: "/"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 10
-    labels:
-      - "dependencies"
-      - "go"
-    commit-message:
-      prefix: "go"
-      include: "scope"
+    patterns:
+      - "*"
+    multi-ecosystem-group: "dependencies"
 
-  # Enable version updates for GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"
+    patterns:
+      - "*"
+    multi-ecosystem-group: "dependencies"
+
+multi-ecosystem-groups:
+  dependencies:
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 10
     labels:
       - "dependencies"
-      - "github-actions"
-    commit-message:
-      prefix: "github-actions"
-      include: "scope" 
