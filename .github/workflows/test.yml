@@ -15,20 +15,19 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Extract Go version
-        id: go-version
-        run: echo "version=$(grep '^go ' go.mod | cut -d' ' -f2)" >> $GITHUB_OUTPUT
+        uses: actions/checkout@v6
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
-          go-version: ${{ steps.go-version.outputs.version }}
+          go-version-file: go.mod
           cache: true
 
       - name: Install dependencies
         run: go mod download
+
+      - name: Run validation checks
+        run: make check
 
       - name: Run tests
         run: go test -v ./... 

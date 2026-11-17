@@ -16,6 +16,17 @@ For detailed AWS RDS setup and configuration, see [AWS RDS IAM Authentication Gu
 
 ## Installation
 
+### Development setup
+
+Install the repository's Go version with [mise](https://mise.jdx.dev/):
+
+```bash
+mise install
+```
+
+The Go version is discovered from `go.mod`; the `toolchain` directive selects the
+preferred patch release.
+
 ### From Source
 
 ```bash

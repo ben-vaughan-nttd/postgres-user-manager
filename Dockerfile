@@ -1,5 +1,5 @@
 # Multi-stage build
-FROM golang:1.24 AS builder
+FROM golang:1.27.4 AS builder
 
 # Set working directory
 WORKDIR /app

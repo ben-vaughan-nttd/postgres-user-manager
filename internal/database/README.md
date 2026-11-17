@@ -5,7 +5,7 @@ This directory contains comprehensive integration tests for the database functio
 ## Prerequisites
 
 1. **Docker**: The tests require Docker to be installed and running, as testcontainers uses Docker to create PostgreSQL instances.
-2. **Go**: Go 1.24.3 or later
+2. **Go**: Use the version declared in the repository's `go.mod` file
 3. **Test Dependencies**: Run `go mod tidy` to install required dependencies
 
 ## Test Structure

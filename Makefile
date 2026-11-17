@@ -1,4 +1,4 @@
-.PHONY: build clean test fmt vet lint run-example install deps
+.PHONY: all build check-go-version test-go-version check clean test fmt vet lint run-example install deps
 
 # Build configuration
 APP_NAME := postgres-user-manager
@@ -16,7 +16,16 @@ GOFMT := $(GOCMD) fmt
 GOVET := $(GOCMD) vet
 
 # Default target
-all: deps fmt vet test build
+all: deps fmt check test build
+
+# Verify the Docker builder uses the module's preferred Go toolchain.
+check-go-version:
+	@scripts/check-go-version.sh Dockerfile go.mod
+
+test-go-version:
+	@scripts/check-go-version-test.sh
+
+check: check-go-version test-go-version vet
 
 # Install dependencies
 deps:
@@ -24,7 +33,7 @@ deps:
 	$(GOCMD) mod tidy
 
 # Build the application
-build:
+build: check-go-version
 	mkdir -p $(BUILD_DIR)
 	$(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(APP_NAME) main.go
 
@@ -98,6 +107,8 @@ help:
 	@echo "  test-coverage - Run tests with coverage"
 	@echo "  fmt           - Format code"
 	@echo "  vet           - Vet code"
+	@echo "  check-go-version - Verify Docker and Go toolchain versions"
+	@echo "  test-go-version  - Test Go version validation failure paths"
 	@echo "  lint          - Lint code (requires golangci-lint)"
 	@echo "  install       - Install the application"
 	@echo "  clean         - Clean build artifacts"
