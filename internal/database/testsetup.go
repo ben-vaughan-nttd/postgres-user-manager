@@ -52,13 +52,19 @@ func SetupTestDatabase(t *testing.T) *TestDatabaseSetup {
 
 	port, err := postgresContainer.MappedPort(ctx, "5432")
 	if err != nil {
+		postgresContainer.Terminate(ctx)
 		t.Fatalf("Failed to get container port: %v", err)
+	}
+	portInt, err := mappedPortInt(port)
+	if err != nil {
+		postgresContainer.Terminate(ctx)
+		t.Fatalf("Failed to convert container port: %v", err)
 	}
 
 	// Create connection info
 	connInfo := &structs.DatabaseConnection{
 		Host:     host,
-		Port:     port.Int(),
+		Port:     portInt,
 		Database: "testdb",
 		Username: "testuser",
 		Password: "testpass",
