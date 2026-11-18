@@ -176,25 +176,6 @@ func (m *Manager) grantRDSIAMRole(username string) error {
 	return nil
 }
 
-// revokeRDSIAMRole revokes the rds_iam role from a user
-func (m *Manager) revokeRDSIAMRole(username string) error {
-	m.logger.WithField("username", username).Info("Revoking rds_iam role")
-	
-	query := fmt.Sprintf("REVOKE rds_iam FROM %s", m.quoteIdentifier(username))
-	
-	if m.dryRun {
-		m.logger.WithField("query", query).Info(msgDryRunExecuteQuery)
-		return nil
-	}
-
-	if _, err := m.db.Exec(query); err != nil {
-		return fmt.Errorf("failed to revoke rds_iam role: %w", err)
-	}
-	
-	m.logger.WithField("username", username).Info("Successfully revoked rds_iam role")
-	return nil
-}
-
 // DropUser removes a database user
 func (m *Manager) DropUser(username string) error {
 	m.logger.WithField("username", username).Info("Dropping user")
@@ -461,7 +442,11 @@ func (m *Manager) GetUserInfo(username string) (*structs.DatabaseUser, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user groups: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			m.logger.WithError(closeErr).Warn("Failed to close rows")
+		}
+	}()
 
 	for rows.Next() {
 		var groupName string

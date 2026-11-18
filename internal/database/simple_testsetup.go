@@ -54,18 +54,24 @@ func SetupSimpleTestDatabase(t *testing.T) *SimpleDatabaseSetup {
 
 	host, err := container.Host(ctx)
 	if err != nil {
-		container.Terminate(ctx)
+		if terminateErr := container.Terminate(ctx); terminateErr != nil {
+			t.Logf("Failed to terminate container after host error: %v", terminateErr)
+		}
 		t.Fatalf("Failed to get container host: %v", err)
 	}
 
 	port, err := container.MappedPort(ctx, "5432")
 	if err != nil {
-		container.Terminate(ctx)
+		if terminateErr := container.Terminate(ctx); terminateErr != nil {
+			t.Logf("Failed to terminate container after port error: %v", terminateErr)
+		}
 		t.Fatalf("Failed to get container port: %v", err)
 	}
 	portInt, err := mappedPortInt(port)
 	if err != nil {
-		container.Terminate(ctx)
+		if terminateErr := container.Terminate(ctx); terminateErr != nil {
+			t.Logf("Failed to terminate container after port conversion error: %v", terminateErr)
+		}
 		t.Fatalf("Failed to convert container port: %v", err)
 	}
 
@@ -81,7 +87,9 @@ func SetupSimpleTestDatabase(t *testing.T) *SimpleDatabaseSetup {
 
 	manager, err := NewManager(connInfo, logger, false)
 	if err != nil {
-		container.Terminate(ctx)
+		if terminateErr := container.Terminate(ctx); terminateErr != nil {
+			t.Logf("Failed to terminate container after manager error: %v", terminateErr)
+		}
 		t.Fatalf("Failed to create database manager: %v", err)
 	}
 
@@ -187,7 +195,9 @@ func (sds *SimpleDatabaseSetup) CreateTestDatabase(t *testing.T, dbName string) 
 func (sds *SimpleDatabaseSetup) DropTestDatabase(t *testing.T, dbName string) {
 	// Terminate connections first
 	query := "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1"
-	sds.Manager.db.Exec(query, dbName)
+	if _, err := sds.Manager.db.Exec(query, dbName); err != nil {
+		t.Logf("Error terminating active connections for %s: %v", dbName, err)
+	}
 
 	query = "DROP DATABASE IF EXISTS " + sds.Manager.quoteIdentifier(dbName)
 	if _, err := sds.Manager.db.Exec(query); err != nil {
@@ -226,7 +236,11 @@ func TestDatabaseConnection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create database manager: %v", err)
 	}
-	defer manager.Close()
+	defer func() {
+		if closeErr := manager.Close(); closeErr != nil {
+			t.Logf("Failed to close manager: %v", closeErr)
+		}
+	}()
 
 	// Test basic query
 	var result int

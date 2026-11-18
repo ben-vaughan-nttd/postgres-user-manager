@@ -75,12 +75,16 @@ func SetupFlexibleTestDatabase(t *testing.T) *FlexibleTestDatabaseSetup {
 
 	port, err := postgresContainer.MappedPort(ctx, "5432")
 	if err != nil {
-		postgresContainer.Terminate(ctx)
+		if terminateErr := postgresContainer.Terminate(ctx); terminateErr != nil {
+			t.Logf("Failed to terminate container after port error: %v", terminateErr)
+		}
 		t.Fatalf("Failed to get container port: %v", err)
 	}
 	portInt, err := mappedPortInt(port)
 	if err != nil {
-		postgresContainer.Terminate(ctx)
+		if terminateErr := postgresContainer.Terminate(ctx); terminateErr != nil {
+			t.Logf("Failed to terminate container after port conversion error: %v", terminateErr)
+		}
 		t.Fatalf("Failed to convert container port: %v", err)
 	}
 
@@ -128,7 +132,9 @@ func SetupFlexibleTestDatabase(t *testing.T) *FlexibleTestDatabaseSetup {
 	}
 
 	if dbErr != nil {
-		postgresContainer.Terminate(ctx)
+		if terminateErr := postgresContainer.Terminate(ctx); terminateErr != nil {
+			t.Logf("Failed to terminate container after manager error: %v", terminateErr)
+		}
 		t.Fatalf("Failed to create database manager after %d attempts: %v", maxRetries, dbErr)
 	}
 
@@ -160,30 +166,40 @@ func configureTestcontainersEnvironment(t *testing.T) {
 	case "colima":
 		t.Logf("Detected Colima Docker environment at %s", dockerConfig.SocketPath)
 		// Disable ryuk for Colima due to socket path issues
-		os.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true")
+		if err := os.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true"); err != nil {
+			t.Logf("Failed to set TESTCONTAINERS_RYUK_DISABLED: %v", err)
+		}
 
 	case "docker-desktop":
 		t.Logf("Detected Docker Desktop environment")
 		// Docker Desktop usually works fine with ryuk, but we can disable it for consistency
 		if shouldDisableRyukForDockerDesktop() {
-			os.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true")
+			if err := os.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true"); err != nil {
+				t.Logf("Failed to set TESTCONTAINERS_RYUK_DISABLED: %v", err)
+			}
 		}
 
 	case "lima":
 		t.Logf("Detected Lima Docker environment")
 		// Lima may have similar issues to Colima
-		os.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true")
+		if err := os.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true"); err != nil {
+			t.Logf("Failed to set TESTCONTAINERS_RYUK_DISABLED: %v", err)
+		}
 
 	case "podman":
 		t.Logf("Detected Podman environment")
 		// Podman may have compatibility issues with ryuk
-		os.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true")
+		if err := os.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true"); err != nil {
+			t.Logf("Failed to set TESTCONTAINERS_RYUK_DISABLED: %v", err)
+		}
 
 	case "unknown":
 		t.Logf("Unknown Docker environment, attempting to detect ryuk compatibility")
 		if !isRyukCompatible() {
 			t.Logf("Ryuk appears incompatible, disabling")
-			os.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true")
+			if err := os.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true"); err != nil {
+				t.Logf("Failed to set TESTCONTAINERS_RYUK_DISABLED: %v", err)
+			}
 		}
 
 	default:
@@ -320,7 +336,9 @@ func (ftds *FlexibleTestDatabaseSetup) Cleanup(t *testing.T) {
 	if os.Getenv("TESTCONTAINERS_RYUK_DISABLED") == "true" {
 		// Only unset if we're not in a persistent environment where it should stay
 		if os.Getenv("TESTCONTAINERS_PERSIST_RYUK_DISABLED") != "true" {
-			os.Unsetenv("TESTCONTAINERS_RYUK_DISABLED")
+			if err := os.Unsetenv("TESTCONTAINERS_RYUK_DISABLED"); err != nil {
+				t.Logf("Failed to unset TESTCONTAINERS_RYUK_DISABLED: %v", err)
+			}
 		}
 	}
 }
@@ -381,7 +399,9 @@ func (ftds *FlexibleTestDatabaseSetup) CreateTestDatabase(t *testing.T, dbName s
 func (ftds *FlexibleTestDatabaseSetup) DropTestDatabase(t *testing.T, dbName string) {
 	// Terminate connections to the database first
 	query := fmt.Sprintf("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '%s'", dbName)
-	ftds.Manager.db.Exec(query)
+	if _, err := ftds.Manager.db.Exec(query); err != nil {
+		t.Logf("Error terminating active connections for %s: %v", dbName, err)
+	}
 
 	query = fmt.Sprintf("DROP DATABASE IF EXISTS %s", ftds.Manager.quoteIdentifier(dbName))
 	if _, err := ftds.Manager.db.Exec(query); err != nil {

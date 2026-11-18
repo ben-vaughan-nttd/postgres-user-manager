@@ -328,7 +328,11 @@ func TestDryRunMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create dry-run manager: %v", err)
 	}
-	defer dryRunManager.Close()
+	defer func() {
+		if closeErr := dryRunManager.Close(); closeErr != nil {
+			t.Logf("Failed to close dry-run manager: %v", closeErr)
+		}
+	}()
 
 	// Try to create a user in dry-run mode
 	userConfig := &structs.UserConfig{

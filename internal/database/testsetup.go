@@ -52,12 +52,16 @@ func SetupTestDatabase(t *testing.T) *TestDatabaseSetup {
 
 	port, err := postgresContainer.MappedPort(ctx, "5432")
 	if err != nil {
-		postgresContainer.Terminate(ctx)
+		if terminateErr := postgresContainer.Terminate(ctx); terminateErr != nil {
+			t.Logf("Failed to terminate container after port error: %v", terminateErr)
+		}
 		t.Fatalf("Failed to get container port: %v", err)
 	}
 	portInt, err := mappedPortInt(port)
 	if err != nil {
-		postgresContainer.Terminate(ctx)
+		if terminateErr := postgresContainer.Terminate(ctx); terminateErr != nil {
+			t.Logf("Failed to terminate container after port conversion error: %v", terminateErr)
+		}
 		t.Fatalf("Failed to convert container port: %v", err)
 	}
 
@@ -75,7 +79,9 @@ func SetupTestDatabase(t *testing.T) *TestDatabaseSetup {
 	// Create database manager
 	manager, err := NewManager(connInfo, logger, false)
 	if err != nil {
-		postgresContainer.Terminate(ctx)
+		if terminateErr := postgresContainer.Terminate(ctx); terminateErr != nil {
+			t.Logf("Failed to terminate container after manager error: %v", terminateErr)
+		}
 		t.Fatalf("Failed to create database manager: %v", err)
 	}
 
@@ -165,7 +171,9 @@ func (tds *TestDatabaseSetup) CreateTestDatabase(t *testing.T, dbName string) {
 func (tds *TestDatabaseSetup) DropTestDatabase(t *testing.T, dbName string) {
 	// Terminate connections to the database first
 	query := fmt.Sprintf("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '%s'", dbName)
-	tds.Manager.db.Exec(query)
+	if _, err := tds.Manager.db.Exec(query); err != nil {
+		t.Logf("Error terminating active connections for %s: %v", dbName, err)
+	}
 	
 	query = fmt.Sprintf("DROP DATABASE IF EXISTS %s", tds.Manager.quoteIdentifier(dbName))
 	if _, err := tds.Manager.db.Exec(query); err != nil {
