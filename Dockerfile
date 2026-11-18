@@ -1,4 +1,6 @@
 # Multi-stage build
+# The builder (golang:<version>, Debian trixie) and the runtime image must share
+# a glibc: pg_query_go requires CGO, so the binary is dynamically linked.
 FROM golang:1.27.4 AS builder
 
 # Set working directory
@@ -13,11 +15,11 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o postgres-user-manager main.go
+# Build the application (CGO is required by pg_query_go)
+RUN CGO_ENABLED=1 GOOS=linux go build -o postgres-user-manager main.go
 
-# Final stage - using debian slim for better compatibility
-FROM debian:bookworm-slim
+# Final stage - Debian trixie slim matches the builder's glibc
+FROM debian:trixie-slim
 
 # Install ca-certificates for HTTPS calls
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*

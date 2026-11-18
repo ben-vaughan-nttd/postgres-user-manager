@@ -27,18 +27,55 @@ mise install
 The Go version is discovered from `go.mod`; the `toolchain` directive selects the
 preferred patch release.
 
+### Build requirements and platforms
+
+Permission statements are validated with PostgreSQL's own parser through
+[`pg_query_go`](https://github.com/pganalyze/pg_query_go), which embeds the
+parser in C. Building from source therefore needs **CGO** and a C compiler
+(`gcc` or `clang`) on `PATH`.
+
+Release binaries and container images are built for:
+
+| OS | Architectures |
+|----|---------------|
+| Linux | `amd64`, `arm64` |
+| macOS (darwin) | `amd64`, `arm64` |
+| Windows | `amd64` |
+
+32-bit x86 (`386`) is no longer built because the embedded parser has to be
+cross compiled with a C toolchain for every target. The container image is
+based on Debian trixie and is dynamically linked.
+
+#### Linux runtime requirements
+
+Because of CGO, the Linux release binaries are **dynamically linked against
+glibc** (`libc.so.6` and the dynamic loader) rather than being static. They run
+only on glibc-based distributions:
+
+- **glibc 2.34 or newer** is required. This is the highest glibc symbol version
+  in the `linux/amd64` and `linux/arm64` binaries built in the
+  `goreleaser-cross` release image, and it can rise if that image changes. Check
+  a binary with `objdump -T postgres-user-manager | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1`.
+- That covers Debian 12 and newer, Ubuntu 22.04 and newer, and RHEL 9 and
+  newer (and compatible distributions). Older releases such as Debian 11,
+  Ubuntu 20.04 and RHEL 8 are **not supported**.
+- musl-based systems such as **Alpine Linux are not supported**. Use the
+  container image, or build from source on the target system.
+- The container image is based on `debian:trixie-slim` (glibc 2.41) and needs no
+  extra setup.
+
 ### From Source
 
 ```bash
 git clone https://github.com/ben-vaughan-nttd/postgres-user-manager.git
 cd postgres-user-manager
-go build -o postgres-user-manager main.go
+CGO_ENABLED=1 go build -o postgres-user-manager main.go
 ```
 
 ### Using Go Install
 
 ```bash
-go install github.com/ben-vaughan-nttd/postgres-user-manager@latest
+CGO_ENABLED=1 go install github.com/ben-vaughan-nttd/postgres-user-manager@latest
 ```
 
 ## Environment Variables
@@ -110,6 +147,11 @@ The tool uses JSON configuration files to define the desired state of users and 
       "groups": ["app_group", "read_only"],
       "privileges": ["CONNECT"],
       "databases": ["myapp_db"],
+      "permissions": [
+        "GRANT USAGE ON SCHEMA app TO app_user",
+        "GRANT SELECT, INSERT, UPDATE ON TABLE app.orders TO app_user",
+        "GRANT USAGE ON SEQUENCE app.orders_id_seq TO app_user"
+      ],
       "enabled": true,
       "description": "Application user"
     }
@@ -119,6 +161,9 @@ The tool uses JSON configuration files to define the desired state of users and 
       "name": "app_group",
       "privileges": ["CONNECT", "TEMPORARY"],
       "databases": ["myapp_db"],
+      "permissions": [
+        "GRANT SELECT ON ALL TABLES IN SCHEMA app TO app_group"
+      ],
       "description": "Main application group",
       "inherit": true
     }
@@ -135,6 +180,7 @@ The tool uses JSON configuration files to define the desired state of users and 
 | `groups` | array | Groups/roles to assign user to | No |
 | `privileges` | array | Direct privileges to grant | No |
 | `databases` | array | Databases to grant privileges on | No |
+| `permissions` | array | `GRANT` statements describing the user's desired privileges (see [Permissions](#permissions)) | No |
 | `enabled` | boolean | Whether the user should be created/maintained | Yes |
 | `description` | string | User description | No |
 
@@ -145,17 +191,137 @@ The tool uses JSON configuration files to define the desired state of users and 
 | `name` | string | Group/role name | Yes |
 | `privileges` | array | Privileges to grant to the group | No |
 | `databases` | array | Databases to grant privileges on | No |
+| `permissions` | array | `GRANT` statements describing the group's desired privileges (see [Permissions](#permissions)) | No |
 | `description` | string | Group description | No |
 | `inherit` | boolean | Whether group members inherit privileges | No |
 
 ### Supported Privileges
 
+The `privileges` and `databases` fields grant **database-level** privileges. Each
+`privileges` entry is combined with each `databases` entry into
+`GRANT <privilege> ON DATABASE <database> TO <role>`, so the valid values are the
+DATABASE privileges in the [support matrix](#permission-support-matrix) below:
+
 - `CONNECT` - Connect to database
-- `TEMPORARY` - Create temporary tables
-- `ALL` - All privileges on database
-- `CREATE` - Create schemas/tables
-- `USAGE` - Use schemas
-- And other standard PostgreSQL privileges
+- `CREATE` - Create schemas in the database
+- `TEMPORARY` (or `TEMP`) - Create temporary tables
+- `ALL` - `CONNECT`, `CREATE` and `TEMPORARY`
+
+For schema, table and sequence privileges use `permissions`.
+
+## Permissions
+
+### Declarative model
+
+`permissions` is a list of SQL `GRANT` statements that together describe the
+**desired privileges** of one user or group, in the same spirit as a Terraform
+resource: the configuration states what should exist.
+
+- `permissions` accepts **`GRANT` statements only**. A `REVOKE` in the
+  configuration is rejected. Access is removed by deleting the `GRANT` from the
+  configuration, not by adding a `REVOKE`.
+- Today `sync` applies the grants. A future `sync` will compare the declared
+  grants with the database and revoke what the configuration no longer
+  declares. The validator already returns a normalized rule that supports this
+  comparison (and can generate the matching `REVOKE`), so configurations written
+  now will keep their meaning.
+- `privileges` + `databases` remain supported. They are turned into
+  `GRANT ... ON DATABASE ...` statements and validated the same way.
+- Role membership is not a permission. Use `groups` for it.
+
+### Validation
+
+Every `GRANT` or `REVOKE` the tool runs is parsed with the PostgreSQL parser,
+checked against the support matrix, and executed from the canonical SQL rendered
+from the parsed statement (never from the raw text). This applies to
+`permissions`, to `privileges`/`databases`, and to the `create-user` flags.
+
+- Exactly one statement is allowed per entry. `;`-chained statements,
+  statements hidden behind comments, and dollar-quoted blocks are rejected.
+- Validation runs when the configuration is loaded, so `validate`, `sync` and
+  `create-user` all fail with an actionable error **before** any database change.
+- Statements in a `permissions` list are validated together before any is
+  executed: if one entry is rejected, none of that list runs.
+
+```bash
+postgres-user-manager validate --config config.json
+```
+
+### Grantee rule
+
+Each statement must name **exactly one grantee, and it must be the user or
+group the statement is listed under**. Identifiers follow PostgreSQL rules:
+unquoted names are folded to lower case and quoted names keep their exact case.
+
+| Listed under role | Grantee in statement | Accepted |
+|-------------------|----------------------|----------|
+| `app_user` | `app_user` | yes |
+| `app_user` | `App_User` (unquoted, folds to `app_user`) | yes |
+| `app_user` | `"app_user"` | yes |
+| `App_User` | `"App_User"` | yes |
+| `App_User` | `App_User` (unquoted, folds to `app_user`) | no |
+| `app_user` | `someone_else` | no |
+
+`PUBLIC`, `CURRENT_USER`, `CURRENT_ROLE`, `SESSION_USER` and multiple grantees
+are rejected.
+
+### Permission support matrix
+
+| Object | Privileges | Notes |
+|--------|------------|-------|
+| `DATABASE` | `CONNECT`, `CREATE`, `TEMPORARY` / `TEMP`, `ALL` | `ALL` = `CONNECT`, `CREATE`, `TEMPORARY` |
+| `SCHEMA` | `USAGE`, `CREATE`, `ALL` | `ALL` = `USAGE`, `CREATE` |
+| `TABLE` | `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `TRUNCATE`, `REFERENCES`, `TRIGGER`, `MAINTAIN`, `ALL` | `ALL` includes `MAINTAIN`. `ALL TABLES IN SCHEMA` is supported. Schema-qualified names (`schema.table`) are supported. |
+| `TABLE` columns | `SELECT`, `INSERT`, `UPDATE`, `REFERENCES`, `ALL` | `GRANT SELECT (a, b) ON TABLE t ...`. `ALL (cols)` means `SELECT`, `INSERT`, `UPDATE`, `REFERENCES`. Every privilege in one statement must use the same column list, and column and table-level privileges cannot be mixed in one statement. Not allowed with `ALL TABLES IN SCHEMA`. |
+| `SEQUENCE` | `USAGE`, `SELECT`, `UPDATE`, `ALL` | `ALL SEQUENCES IN SCHEMA` is supported. |
+
+Rejected, with an error that names the offending element:
+
+- Any statement other than `GRANT`/`REVOKE` on privileges, including role
+  membership (`GRANT role TO role`), `DO`, `COPY`, `CALL`, and
+  `ALTER DEFAULT PRIVILEGES`.
+- Grantees `PUBLIC`, `CURRENT_USER`, `CURRENT_ROLE`, `SESSION_USER`, and more than
+  one grantee.
+- `GRANTED BY`, `WITH GRANT OPTION`, `GRANT OPTION FOR`, and `CASCADE`.
+- Functions, procedures, routines, types, domains, languages, large objects,
+  foreign servers and foreign data wrappers, tablespaces, and parameters.
+- Database-qualified table names (`db.schema.table`).
+
+`REVOKE` is accepted by the validator itself (the database manager's
+`RevokePrivileges` and a future `sync` use it) but not in `permissions`.
+
+### Normalization
+
+Equivalent statements produce the same normalized rule: keywords and unquoted
+identifiers are case-insensitive, `TEMP` equals `TEMPORARY`, and privileges,
+objects and columns are de-duplicated and sorted.
+
+`ALL` is expanded to the concrete privileges only for comparison, so
+`GRANT ALL ON TABLE t` and a statement that lists every table privilege are the
+same rule. When the tool runs the statement, a **full privilege set is
+canonicalized back to `ALL`** (`ALL (columns)` for column grants), never to the
+explicit list. This applies to every object type and to `ALL TABLES IN SCHEMA`.
+
+What `ALL` means is decided by the server that runs the statement, so it depends
+on the PostgreSQL version. For example, `ALL` on a table includes `MAINTAIN` on
+PostgreSQL 17 and newer, and does not on PostgreSQL 16 and older, where
+`MAINTAIN` does not exist. Rendering the full set as `ALL` keeps such statements
+valid on older servers instead of sending a `MAINTAIN` they would reject.
+Explicitly naming `MAINTAIN` together with every other table privilege is also
+sent as `ALL`; to grant `MAINTAIN` alone, list it on its own.
+
+### Parser version policy
+
+Statements are parsed with the **PostgreSQL 17** grammar embedded in
+`pg_query_go` v6 (pinned in `go.mod`). The grammar version does not depend on the
+server version. Syntax that is not valid in the PostgreSQL 17 grammar is rejected
+with an error that names the grammar version. Validation checks the statement
+against the PostgreSQL 17 support matrix; it does not check what the target
+server supports. `MAINTAIN` is a PostgreSQL 17 privilege: the validator accepts
+it, but servers older than 17 will reject a statement that names it. Full
+privilege sets are canonicalized to `ALL` (see [Normalization](#normalization)),
+whose meaning follows the target server's version. Moving to a newer grammar means upgrading
+`pg_query_go` and is treated as a deliberate change.
 
 ## Usage
 
@@ -316,7 +482,14 @@ This tool is designed with future AWS Cognito integration in mind:
 ### Building
 
 ```bash
-go build -o postgres-user-manager main.go
+CGO_ENABLED=1 go build -o postgres-user-manager main.go
+```
+
+Build every release platform (linux amd64/arm64, darwin amd64/arm64,
+windows amd64) with the C cross compilers in the `goreleaser-cross` image:
+
+```bash
+make build-all
 ```
 
 ### Running Tests

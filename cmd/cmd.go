@@ -221,6 +221,12 @@ func runCreateUser(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Preflight: validate privileges before connecting to the database
+	preflight := &structs.UserConfig{Username: username, Privileges: privileges, Databases: databases}
+	if err := config.ValidateUser(preflight); err != nil {
+		return fmt.Errorf("invalid privileges: %w", err)
+	}
+
 	// Get database connection
 	configManager := config.NewManager(logger)
 	dbConn, err := configManager.GetDatabaseConnection()

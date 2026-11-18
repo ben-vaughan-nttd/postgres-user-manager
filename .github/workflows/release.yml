@@ -42,14 +42,29 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Run GoReleaser
-      uses: goreleaser/goreleaser-action@v7
-      with:
-        distribution: goreleaser
-        version: latest
-        args: release --clean
+    # pg_query_go needs CGO, so releases are cross compiled with the C toolchains
+    # in the goreleaser-cross image (linux amd64/arm64, darwin amd64/arm64,
+    # windows amd64). Syft, the Docker socket and the registry login are
+    # mounted in for the SBOM and image steps.
+    - name: Run GoReleaser (goreleaser-cross)
       env:
+        GOLANG_CROSS_VERSION: v1.27
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+      run: |
+        docker run --rm \
+          -e GITHUB_TOKEN \
+          -e GITHUB_REPOSITORY_OWNER \
+          -e GIT_CONFIG_COUNT=1 \
+          -e GIT_CONFIG_KEY_0=safe.directory \
+          -e GIT_CONFIG_VALUE_0=/work \
+          -v /var/run/docker.sock:/var/run/docker.sock \
+          -v "$HOME/.docker/config.json:/root/.docker/config.json:ro" \
+          -v "$(command -v syft):/usr/local/bin/syft:ro" \
+          -v "$PWD:/work" \
+          -w /work \
+          "ghcr.io/goreleaser/goreleaser-cross:${GOLANG_CROSS_VERSION}" \
+          release --clean
     
     - name: Upload artifacts to GitHub Packages
       uses: actions/upload-artifact@v7
