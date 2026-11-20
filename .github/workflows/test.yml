@@ -29,5 +29,8 @@ jobs:
       - name: Run validation checks
         run: make check
 
+      - name: Run vulnerability scan
+        run: make vuln
+
       - name: Run tests
         run: go test -v ./... 

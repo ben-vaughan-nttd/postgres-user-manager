@@ -2,7 +2,9 @@ version: 2
 updates:
   # Keep Go modules and GitHub Actions updates in one weekly group.
   - package-ecosystem: "gomod"
-    directory: "/"
+    directories:
+      - "/"
+      - "/tools"
     patterns:
       - "*"
     multi-ecosystem-group: "dependencies"

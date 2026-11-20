@@ -1,4 +1,4 @@
-.PHONY: all build build-all build-all-native check-go-version test-go-version check clean test fmt vet lint run-example install deps
+.PHONY: all build build-all build-all-native check-go-version test-go-version check clean test fmt vet lint vuln run-example install deps
 
 # Build configuration
 APP_NAME := postgres-user-manager
@@ -14,6 +14,7 @@ GOCLEAN := $(GOCMD) clean
 GOGET := $(GOCMD) get
 GOFMT := $(GOCMD) fmt
 GOVET := $(GOCMD) vet
+GOTOOL := $(GOCMD) tool -modfile=tools/go.mod
 
 # Default target
 all: deps fmt check test build
@@ -112,6 +113,10 @@ dev-setup:
 lint:
 	golangci-lint run
 
+# Scan for known vulnerabilities
+vuln:
+	$(GOTOOL) govulncheck ./...
+
 # Quick development build and test
 dev: fmt vet test build
 
@@ -132,6 +137,7 @@ help:
 	@echo "  check-go-version - Verify Docker and Go toolchain versions"
 	@echo "  test-go-version  - Test Go version validation failure paths"
 	@echo "  lint          - Lint code (requires golangci-lint)"
+	@echo "  vuln          - Scan for known vulnerabilities (govulncheck)"
 	@echo "  install       - Install the application"
 	@echo "  clean         - Clean build artifacts"
 	@echo "  deps          - Install dependencies"
