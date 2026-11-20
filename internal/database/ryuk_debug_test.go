@@ -13,8 +13,14 @@ import (
 // TestWithoutRyuk tests testcontainers with ryuk disabled
 func TestWithoutRyuk(t *testing.T) {
 	// Disable ryuk for this test
-	os.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true")
-	defer os.Unsetenv("TESTCONTAINERS_RYUK_DISABLED")
+	if err := os.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true"); err != nil {
+		t.Fatalf("Failed to set TESTCONTAINERS_RYUK_DISABLED: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("TESTCONTAINERS_RYUK_DISABLED"); err != nil {
+			t.Logf("Failed to unset TESTCONTAINERS_RYUK_DISABLED: %v", err)
+		}
+	}()
 
 	ctx := context.Background()
 
@@ -48,8 +54,14 @@ func TestWithoutRyuk(t *testing.T) {
 // TestPostgreSQLWithoutRyuk tests PostgreSQL container with ryuk disabled
 func TestPostgreSQLWithoutRyuk(t *testing.T) {
 	// Disable ryuk for this test
-	os.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true")
-	defer os.Unsetenv("TESTCONTAINERS_RYUK_DISABLED")
+	if err := os.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true"); err != nil {
+		t.Fatalf("Failed to set TESTCONTAINERS_RYUK_DISABLED: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("TESTCONTAINERS_RYUK_DISABLED"); err != nil {
+			t.Logf("Failed to unset TESTCONTAINERS_RYUK_DISABLED: %v", err)
+		}
+	}()
 
 	ctx := context.Background()
 

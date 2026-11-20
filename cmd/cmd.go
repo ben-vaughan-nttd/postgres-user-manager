@@ -158,7 +158,11 @@ func runSync(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize database manager: %w", err)
 	}
-	defer dbManager.Close()
+	defer func() {
+		if closeErr := dbManager.Close(); closeErr != nil {
+			logger.WithError(closeErr).Warn("Failed to close database manager")
+		}
+	}()
 
 	// Sync configuration
 	result, err := dbManager.SyncConfiguration(cfg)
@@ -221,6 +225,12 @@ func runCreateUser(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Preflight: validate privileges before connecting to the database
+	preflight := &structs.UserConfig{Username: username, Privileges: privileges, Databases: databases}
+	if err := config.ValidateUser(preflight); err != nil {
+		return fmt.Errorf("invalid privileges: %w", err)
+	}
+
 	// Get database connection
 	configManager := config.NewManager(logger)
 	dbConn, err := configManager.GetDatabaseConnection()
@@ -233,7 +243,11 @@ func runCreateUser(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize database manager: %w", err)
 	}
-	defer dbManager.Close()
+	defer func() {
+		if closeErr := dbManager.Close(); closeErr != nil {
+			logger.WithError(closeErr).Warn("Failed to close database manager")
+		}
+	}()
 
 	// Create user configuration
 	userConfig := &structs.UserConfig{
@@ -293,7 +307,11 @@ func runDropUser(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize database manager: %w", err)
 	}
-	defer dbManager.Close()
+	defer func() {
+		if closeErr := dbManager.Close(); closeErr != nil {
+			logger.WithError(closeErr).Warn("Failed to close database manager")
+		}
+	}()
 
 	// Drop user
 	if err := dbManager.DropUser(username); err != nil {
@@ -320,7 +338,11 @@ func runListUsers(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize database manager: %w", err)
 	}
-	defer dbManager.Close()
+	defer func() {
+		if closeErr := dbManager.Close(); closeErr != nil {
+			logger.WithError(closeErr).Warn("Failed to close database manager")
+		}
+	}()
 
 	// This would require implementing a ListUsers method in the database manager
 	// For now, we'll just indicate that this is a placeholder

@@ -55,7 +55,11 @@ func TestNewManagerDryRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create dry-run manager: %v", err)
 	}
-	defer dryRunManager.Close()
+	defer func() {
+		if closeErr := dryRunManager.Close(); closeErr != nil {
+			t.Logf("Failed to close dry-run manager: %v", closeErr)
+		}
+	}()
 
 	if !dryRunManager.dryRun {
 		t.Fatal("Expected dry-run mode to be enabled")

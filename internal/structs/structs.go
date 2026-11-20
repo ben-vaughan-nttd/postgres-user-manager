@@ -15,6 +15,7 @@ type UserConfig struct {
 	Groups          []string `json:"groups"`
 	Privileges      []string `json:"privileges"`
 	Databases       []string `json:"databases"`
+	Permissions     []string `json:"permissions,omitempty"`     // GRANT statements only; desired state for this user
 	Enabled         bool     `json:"enabled"`
 	Description     string   `json:"description,omitempty"`
 	AuthMethod      string   `json:"auth_method,omitempty"`     // "iam" or "password" (default: "password")
@@ -28,6 +29,7 @@ type GroupConfig struct {
 	Name        string   `json:"name"`
 	Privileges  []string `json:"privileges"`
 	Databases   []string `json:"databases"`
+	Permissions []string `json:"permissions,omitempty"` // GRANT statements only; desired state for this group
 	Description string   `json:"description,omitempty"`
 	Inherit     bool     `json:"inherit"`
 }

@@ -25,7 +25,9 @@ type ColimaTestDatabaseSetup struct {
 // SetupColimaTestDatabase creates a PostgreSQL test database that works with Colima
 func SetupColimaTestDatabase(t *testing.T) *ColimaTestDatabaseSetup {
 	// Disable ryuk to work around Colima issues
-	os.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true")
+	if err := os.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true"); err != nil {
+		t.Fatalf("Failed to set TESTCONTAINERS_RYUK_DISABLED: %v", err)
+	}
 	
 	ctx := context.Background()
 
@@ -56,12 +58,16 @@ func SetupColimaTestDatabase(t *testing.T) *ColimaTestDatabaseSetup {
 
 	port, err := postgresContainer.MappedPort(ctx, "5432")
 	if err != nil {
-		postgresContainer.Terminate(ctx)
+		if terminateErr := postgresContainer.Terminate(ctx); terminateErr != nil {
+			t.Logf("Failed to terminate container after port error: %v", terminateErr)
+		}
 		t.Fatalf("Failed to get container port: %v", err)
 	}
 	portInt, err := mappedPortInt(port)
 	if err != nil {
-		postgresContainer.Terminate(ctx)
+		if terminateErr := postgresContainer.Terminate(ctx); terminateErr != nil {
+			t.Logf("Failed to terminate container after port conversion error: %v", terminateErr)
+		}
 		t.Fatalf("Failed to convert container port: %v", err)
 	}
 
@@ -79,7 +85,9 @@ func SetupColimaTestDatabase(t *testing.T) *ColimaTestDatabaseSetup {
 	// Create database manager
 	manager, err := NewManager(connInfo, logger, false)
 	if err != nil {
-		postgresContainer.Terminate(ctx)
+		if terminateErr := postgresContainer.Terminate(ctx); terminateErr != nil {
+			t.Logf("Failed to terminate container after manager error: %v", terminateErr)
+		}
 		t.Fatalf("Failed to create database manager: %v", err)
 	}
 
@@ -108,7 +116,9 @@ func (ctds *ColimaTestDatabaseSetup) Cleanup(t *testing.T) {
 	}
 	
 	// Clean up environment variable
-	os.Unsetenv("TESTCONTAINERS_RYUK_DISABLED")
+	if err := os.Unsetenv("TESTCONTAINERS_RYUK_DISABLED"); err != nil {
+		t.Logf("Error unsetting TESTCONTAINERS_RYUK_DISABLED: %v", err)
+	}
 }
 
 // ResetDatabase cleans up any test data from the database  
@@ -167,7 +177,9 @@ func (ctds *ColimaTestDatabaseSetup) CreateTestDatabase(t *testing.T, dbName str
 func (ctds *ColimaTestDatabaseSetup) DropTestDatabase(t *testing.T, dbName string) {
 	// Terminate connections to the database first
 	query := fmt.Sprintf("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '%s'", dbName)
-	ctds.Manager.db.Exec(query)
+	if _, err := ctds.Manager.db.Exec(query); err != nil {
+		t.Logf("Error terminating active connections for %s: %v", dbName, err)
+	}
 	
 	query = fmt.Sprintf("DROP DATABASE IF EXISTS %s", ctds.Manager.quoteIdentifier(dbName))
 	if _, err := ctds.Manager.db.Exec(query); err != nil {

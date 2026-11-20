@@ -6,6 +6,7 @@ toolchain go1.27.4
 
 require (
 	github.com/lib/pq v1.12.3
+	github.com/pganalyze/pg_query_go/v6 v6.2.5
 	github.com/sirupsen/logrus v1.10.2
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
@@ -72,4 +73,5 @@ require (
 	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
+	google.golang.org/protobuf v1.34.2 // indirect
 )

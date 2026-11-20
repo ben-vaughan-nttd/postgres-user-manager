@@ -6,9 +6,13 @@ before:
   hooks:
     - go mod tidy
 
+# pg_query_go embeds the PostgreSQL parser in C, so every target needs CGO and a
+# C cross compiler. Run GoReleaser in the goreleaser-cross image, which provides
+# the compilers named below (see .github/workflows/release.yml). 32-bit x86 is
+# no longer built.
 builds:
   - env:
-      - CGO_ENABLED=0
+      - CGO_ENABLED=1
     goos:
       - linux
       - windows
@@ -16,12 +20,35 @@ builds:
     goarch:
       - amd64
       - arm64
-      - '386'
     ignore:
-      - goos: darwin
-        goarch: '386'
       - goos: windows
         goarch: arm64
+    overrides:
+      - goos: linux
+        goarch: amd64
+        env:
+          - CC=x86_64-linux-gnu-gcc
+          - CXX=x86_64-linux-gnu-g++
+      - goos: linux
+        goarch: arm64
+        env:
+          - CC=aarch64-linux-gnu-gcc
+          - CXX=aarch64-linux-gnu-g++
+      - goos: darwin
+        goarch: amd64
+        env:
+          - CC=o64-clang
+          - CXX=o64-clang++
+      - goos: darwin
+        goarch: arm64
+        env:
+          - CC=oa64-clang
+          - CXX=oa64-clang++
+      - goos: windows
+        goarch: amd64
+        env:
+          - CC=x86_64-w64-mingw32-gcc
+          - CXX=x86_64-w64-mingw32-g++
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
     main: .

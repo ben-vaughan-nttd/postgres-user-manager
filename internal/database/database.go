@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ben-vaughan-nttd/postgres-user-manager/internal/permissions"
 	"github.com/ben-vaughan-nttd/postgres-user-manager/internal/structs"
 	_ "github.com/lib/pq" // PostgreSQL driver
 	"github.com/sirupsen/logrus"
@@ -175,25 +176,6 @@ func (m *Manager) grantRDSIAMRole(username string) error {
 	return nil
 }
 
-// revokeRDSIAMRole revokes the rds_iam role from a user
-func (m *Manager) revokeRDSIAMRole(username string) error {
-	m.logger.WithField("username", username).Info("Revoking rds_iam role")
-	
-	query := fmt.Sprintf("REVOKE rds_iam FROM %s", m.quoteIdentifier(username))
-	
-	if m.dryRun {
-		m.logger.WithField("query", query).Info(msgDryRunExecuteQuery)
-		return nil
-	}
-
-	if _, err := m.db.Exec(query); err != nil {
-		return fmt.Errorf("failed to revoke rds_iam role: %w", err)
-	}
-	
-	m.logger.WithField("username", username).Info("Successfully revoked rds_iam role")
-	return nil
-}
-
 // DropUser removes a database user
 func (m *Manager) DropUser(username string) error {
 	m.logger.WithField("username", username).Info("Dropping user")
@@ -269,23 +251,59 @@ func (m *Manager) GrantPrivileges(target string, privileges []string, databases 
 		"databases":  databases,
 	}).Info("Granting privileges")
 
-	for _, db := range databases {
-		for _, priv := range privileges {
-			query := fmt.Sprintf("GRANT %s ON DATABASE %s TO %s", 
-				priv, m.quoteIdentifier(db), m.quoteIdentifier(target))
+	// Validate every statement before executing any, so a rejected entry
+	// leaves the database unchanged.
+	statements, err := permissions.CanonicalDatabaseStatements(permissions.ActionGrant, target, privileges, databases)
+	if err != nil {
+		return err
+	}
 
-			if m.dryRun {
-				m.logger.WithField("query", query).Info(msgDryRunExecuteQuery)
-				continue
-			}
-
-			if _, err := m.db.Exec(query); err != nil {
-				return fmt.Errorf("failed to grant %s on %s to %s: %w", priv, db, target, err)
-			}
-		}
+	if err := m.execStatements(statements); err != nil {
+		return fmt.Errorf("failed to grant privileges to %s: %w", target, err)
 	}
 
 	m.logger.WithField("target", target).Info("Privileges granted successfully")
+	return nil
+}
+
+// ApplyPermissions applies declarative GRANT statements to a user or group.
+// Every statement is validated (GRANT only, grantee must be principal) before
+// any is executed, and the canonical SQL rendered from the validated rule is
+// what runs, never the raw input.
+func (m *Manager) ApplyPermissions(principal string, stmts []string) error {
+	if len(stmts) == 0 {
+		return nil
+	}
+
+	m.logger.WithFields(logrus.Fields{
+		"principal":   principal,
+		"permissions": len(stmts),
+	}).Info("Applying permissions")
+
+	statements, err := permissions.CanonicalGrants(principal, stmts)
+	if err != nil {
+		return err
+	}
+
+	if err := m.execStatements(statements); err != nil {
+		return fmt.Errorf("failed to apply permissions to %s: %w", principal, err)
+	}
+
+	m.logger.WithField("principal", principal).Info("Permissions applied successfully")
+	return nil
+}
+
+// execStatements executes canonical SQL, or logs it in dry-run mode.
+func (m *Manager) execStatements(statements []string) error {
+	for _, query := range statements {
+		if m.dryRun {
+			m.logger.WithField("query", query).Info(msgDryRunExecuteQuery)
+			continue
+		}
+		if _, err := m.db.Exec(query); err != nil {
+			return fmt.Errorf("%s: %w", query, err)
+		}
+	}
 	return nil
 }
 
@@ -297,20 +315,13 @@ func (m *Manager) RevokePrivileges(target string, privileges []string, databases
 		"databases":  databases,
 	}).Info("Revoking privileges")
 
-	for _, db := range databases {
-		for _, priv := range privileges {
-			query := fmt.Sprintf("REVOKE %s ON DATABASE %s FROM %s", 
-				priv, m.quoteIdentifier(db), m.quoteIdentifier(target))
+	statements, err := permissions.CanonicalDatabaseStatements(permissions.ActionRevoke, target, privileges, databases)
+	if err != nil {
+		return err
+	}
 
-			if m.dryRun {
-				m.logger.WithField("query", query).Info(msgDryRunExecuteQuery)
-				continue
-			}
-
-			if _, err := m.db.Exec(query); err != nil {
-				return fmt.Errorf("failed to revoke %s on %s from %s: %w", priv, db, target, err)
-			}
-		}
+	if err := m.execStatements(statements); err != nil {
+		return fmt.Errorf("failed to revoke privileges from %s: %w", target, err)
 	}
 
 	m.logger.WithField("target", target).Info("Privileges revoked successfully")
@@ -431,7 +442,11 @@ func (m *Manager) GetUserInfo(username string) (*structs.DatabaseUser, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user groups: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			m.logger.WithError(closeErr).Warn("Failed to close rows")
+		}
+	}()
 
 	for rows.Next() {
 		var groupName string
@@ -462,6 +477,11 @@ func (m *Manager) SyncConfiguration(config *structs.Config) (*structs.SyncResult
 		if err := m.GrantPrivileges(group.Name, group.Privileges, group.Databases); err != nil {
 			result.Errors = append(result.Errors, fmt.Errorf("failed to grant privileges to group %s: %w", group.Name, err))
 		}
+
+		// Apply group permissions
+		if err := m.ApplyPermissions(group.Name, group.Permissions); err != nil {
+			result.Errors = append(result.Errors, fmt.Errorf("failed to apply permissions to group %s: %w", group.Name, err))
+		}
 	}
 
 	// Create and configure users
@@ -487,6 +507,11 @@ func (m *Manager) SyncConfiguration(config *structs.Config) (*structs.SyncResult
 		// Grant user privileges
 		if err := m.GrantPrivileges(user.Username, user.Privileges, user.Databases); err != nil {
 			result.Errors = append(result.Errors, fmt.Errorf("failed to grant privileges to user %s: %w", user.Username, err))
+		}
+
+		// Apply user permissions
+		if err := m.ApplyPermissions(user.Username, user.Permissions); err != nil {
+			result.Errors = append(result.Errors, fmt.Errorf("failed to apply permissions to user %s: %w", user.Username, err))
 		}
 	}
 

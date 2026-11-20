@@ -126,18 +126,24 @@ func createSharedContainer(t *testing.T) (*SharedTestContainer, error) {
 	// Get connection details
 	host, err := postgresContainer.Host(ctx)
 	if err != nil {
-		postgresContainer.Terminate(ctx)
+		if terminateErr := postgresContainer.Terminate(ctx); terminateErr != nil {
+			t.Logf("Failed to terminate container after host error: %v", terminateErr)
+		}
 		return nil, err
 	}
 
 	port, err := postgresContainer.MappedPort(ctx, "5432")
 	if err != nil {
-		postgresContainer.Terminate(ctx)
+		if terminateErr := postgresContainer.Terminate(ctx); terminateErr != nil {
+			t.Logf("Failed to terminate container after port error: %v", terminateErr)
+		}
 		return nil, err
 	}
 	portInt, err := mappedPortInt(port)
 	if err != nil {
-		postgresContainer.Terminate(ctx)
+		if terminateErr := postgresContainer.Terminate(ctx); terminateErr != nil {
+			t.Logf("Failed to terminate container after port conversion error: %v", terminateErr)
+		}
 		return nil, err
 	}
 
@@ -168,11 +174,15 @@ func createSharedContainer(t *testing.T) (*SharedTestContainer, error) {
 		tempManager, err := NewManager(connInfo, logger, false)
 		if err == nil {
 			if pingErr := tempManager.db.Ping(); pingErr == nil {
-				tempManager.Close()
+				if closeErr := tempManager.Close(); closeErr != nil {
+					t.Logf("Failed to close temporary manager: %v", closeErr)
+				}
 				t.Logf("Shared container connection verified on attempt %d", i+1)
 				break
 			} else {
-				tempManager.Close()
+				if closeErr := tempManager.Close(); closeErr != nil {
+					t.Logf("Failed to close temporary manager: %v", closeErr)
+				}
 				t.Logf("Shared container ping failed on attempt %d: %v", i+1, pingErr)
 			}
 		} else {
@@ -182,7 +192,9 @@ func createSharedContainer(t *testing.T) (*SharedTestContainer, error) {
 		if i < maxRetries-1 {
 			time.Sleep(retryDelay)
 		} else {
-			postgresContainer.Terminate(ctx)
+			if terminateErr := postgresContainer.Terminate(ctx); terminateErr != nil {
+				t.Logf("Failed to terminate container after retries: %v", terminateErr)
+			}
 			return nil, err
 		}
 	}
@@ -224,7 +236,11 @@ func createTestDatabase(container *SharedTestContainer, dbName string) error {
 	if err != nil {
 		return err
 	}
-	defer tempManager.Close()
+	defer func() {
+		if closeErr := tempManager.Close(); closeErr != nil {
+			container.Logger.WithError(closeErr).Warn("Failed to close temporary manager")
+		}
+	}()
 
 	// Create the database (dbName should be safe since we generate it)
 	query := "CREATE DATABASE " + dbName
@@ -290,7 +306,11 @@ func dropTestDatabase(container *SharedTestContainer, dbName string) error {
 	if err != nil {
 		return err
 	}
-	defer tempManager.Close()
+	defer func() {
+		if closeErr := tempManager.Close(); closeErr != nil {
+			container.Logger.WithError(closeErr).Warn("Failed to close temporary manager")
+		}
+	}()
 
 	// Drop the database
 	query := "DROP DATABASE IF EXISTS " + dbName

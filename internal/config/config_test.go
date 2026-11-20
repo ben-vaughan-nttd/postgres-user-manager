@@ -46,12 +46,18 @@ func TestLoadConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf(failedCreateTempFile, err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer func() {
+		if removeErr := os.Remove(tmpFile.Name()); removeErr != nil {
+			t.Fatalf("Failed to remove temp file: %v", removeErr)
+		}
+	}()
 
 	if _, err := tmpFile.Write([]byte(configContent)); err != nil {
 		t.Fatalf("Failed to write temp file: %v", err)
 	}
-	tmpFile.Close()
+	if err := tmpFile.Close(); err != nil {
+		t.Fatalf("Failed to close temp file: %v", err)
+	}
 
 	// Test loading the config
 	config, err := manager.LoadConfig(tmpFile.Name())
@@ -96,8 +102,7 @@ func TestGetDatabaseConnection(t *testing.T) {
 	}
 
 	// Set required environment variable
-	os.Setenv("POSTGRES_PASSWORD", "test_password")
-	defer os.Unsetenv("POSTGRES_PASSWORD")
+	t.Setenv("POSTGRES_PASSWORD", "test_password")
 
 	conn, err := manager.GetDatabaseConnection()
 	if err != nil {
@@ -143,8 +148,14 @@ func TestSaveConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf(failedCreateTempFile, err)
 	}
-	defer os.Remove(tmpFile.Name())
-	tmpFile.Close()
+	defer func() {
+		if removeErr := os.Remove(tmpFile.Name()); removeErr != nil {
+			t.Fatalf("Failed to remove temp file: %v", removeErr)
+		}
+	}()
+	if err := tmpFile.Close(); err != nil {
+		t.Fatalf("Failed to close temp file: %v", err)
+	}
 
 	// Save the configuration
 	err = manager.SaveConfig(config, tmpFile.Name())
@@ -174,16 +185,10 @@ func TestGetDatabaseConnectionWithIAM(t *testing.T) {
 	manager := NewManager(logger)
 	
 	// Set environment variables for IAM authentication
-	os.Setenv("POSTGRES_IAM_AUTH", "true")
-	os.Setenv("AWS_REGION", "us-west-2")
-	os.Setenv("POSTGRES_USER", "iam_user")
-	os.Setenv("POSTGRES_HOST", "test.cluster-xxx.us-west-2.rds.amazonaws.com")
-	defer func() {
-		os.Unsetenv("POSTGRES_IAM_AUTH")
-		os.Unsetenv("AWS_REGION")
-		os.Unsetenv("POSTGRES_USER")
-		os.Unsetenv("POSTGRES_HOST")
-	}()
+	t.Setenv("POSTGRES_IAM_AUTH", "true")
+	t.Setenv("AWS_REGION", "us-west-2")
+	t.Setenv("POSTGRES_USER", "iam_user")
+	t.Setenv("POSTGRES_HOST", "test.cluster-xxx.us-west-2.rds.amazonaws.com")
 	
 	conn, err := manager.GetDatabaseConnection()
 	if err != nil {
@@ -214,18 +219,11 @@ func TestEnvironmentVariableHandling(t *testing.T) {
 	manager := NewManager(logger)
 
 	// Test with custom environment variables
-	os.Setenv("POSTGRES_HOST", "custom-host")
-	os.Setenv("POSTGRES_PORT", "5433")
-	os.Setenv("POSTGRES_DB", "custom_db")
-	os.Setenv("POSTGRES_USER", "custom_user")
-	os.Setenv("POSTGRES_PASSWORD", "custom_pass")
-	defer func() {
-		os.Unsetenv("POSTGRES_HOST")
-		os.Unsetenv("POSTGRES_PORT")
-		os.Unsetenv("POSTGRES_DB")
-		os.Unsetenv("POSTGRES_USER")
-		os.Unsetenv("POSTGRES_PASSWORD")
-	}()
+	t.Setenv("POSTGRES_HOST", "custom-host")
+	t.Setenv("POSTGRES_PORT", "5433")
+	t.Setenv("POSTGRES_DB", "custom_db")
+	t.Setenv("POSTGRES_USER", "custom_user")
+	t.Setenv("POSTGRES_PASSWORD", "custom_pass")
 
 	conn, err := manager.GetDatabaseConnection()
 	if err != nil {
@@ -266,12 +264,18 @@ func TestLoadConfigWithInvalidFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf(failedCreateTempFile, err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer func() {
+		if removeErr := os.Remove(tmpFile.Name()); removeErr != nil {
+			t.Fatalf("Failed to remove temp file: %v", removeErr)
+		}
+	}()
 
 	if _, err := tmpFile.Write([]byte("invalid json content")); err != nil {
 		t.Fatalf("Failed to write temp file: %v", err)
 	}
-	tmpFile.Close()
+	if err := tmpFile.Close(); err != nil {
+		t.Fatalf("Failed to close temp file: %v", err)
+	}
 
 	_, err = manager.LoadConfig(tmpFile.Name())
 	if err == nil {
@@ -308,12 +312,8 @@ func TestConfigPortParsing(t *testing.T) {
 	manager := NewManager(logger)
 
 	// Test with invalid port
-	os.Setenv("POSTGRES_PORT", "invalid_port")
-	os.Setenv("POSTGRES_PASSWORD", "test_pass")
-	defer func() {
-		os.Unsetenv("POSTGRES_PORT")
-		os.Unsetenv("POSTGRES_PASSWORD")
-	}()
+	t.Setenv("POSTGRES_PORT", "invalid_port")
+	t.Setenv("POSTGRES_PASSWORD", "test_pass")
 
 	_, err := manager.GetDatabaseConnection()
 	if err == nil {

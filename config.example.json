@@ -6,6 +6,11 @@
       "groups": ["app_group", "read_only"],
       "privileges": ["CONNECT"],
       "databases": ["myapp_db"],
+      "permissions": [
+        "GRANT USAGE ON SCHEMA app TO app_user",
+        "GRANT SELECT, INSERT, UPDATE ON TABLE app.orders TO app_user",
+        "GRANT USAGE ON SEQUENCE app.orders_id_seq TO app_user"
+      ],
       "enabled": true,
       "description": "Application user with password authentication",
       "auth_method": "password",
@@ -68,6 +73,10 @@
       "name": "read_only",
       "privileges": ["CONNECT"],
       "databases": ["myapp_db", "analytics_db"],
+      "permissions": [
+        "GRANT USAGE ON SCHEMA app TO read_only",
+        "GRANT SELECT ON ALL TABLES IN SCHEMA app TO read_only"
+      ],
       "description": "Read-only access group",
       "inherit": true
     },

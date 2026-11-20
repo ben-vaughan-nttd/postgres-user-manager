@@ -44,6 +44,11 @@ func (m *Manager) LoadConfig(configPath string) (*structs.Config, error) {
 		return nil, fmt.Errorf("failed to parse configuration file: %w", err)
 	}
 
+	// Preflight: validate permissions and privileges before anything can run.
+	if err := ValidateConfig(&config); err != nil {
+		return nil, fmt.Errorf("invalid permissions in configuration: %w", err)
+	}
+
 	m.logger.WithFields(logrus.Fields{
 		"users":  len(config.Users),
 		"groups": len(config.Groups),

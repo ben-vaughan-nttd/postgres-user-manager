@@ -1,4 +1,4 @@
-.PHONY: all build check-go-version test-go-version check clean test fmt vet lint run-example install deps
+.PHONY: all build build-all build-all-native check-go-version test-go-version check clean test fmt vet lint run-example install deps
 
 # Build configuration
 APP_NAME := postgres-user-manager
@@ -37,13 +37,34 @@ build: check-go-version
 	mkdir -p $(BUILD_DIR)
 	$(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(APP_NAME) main.go
 
-# Build for multiple platforms
+# Build for multiple platforms.
+#
+# pg_query_go embeds the PostgreSQL parser in C, so every target needs CGO and a
+# C cross compiler. The matrix is linux amd64/arm64, darwin amd64/arm64 and
+# windows amd64 (386 is not built). build-all runs build-all-native inside the
+# goreleaser-cross image, which provides all of the compilers below; run
+# build-all-native directly only where equivalent toolchains are on PATH.
+CROSS_IMAGE ?= ghcr.io/goreleaser/goreleaser-cross:v1.27
+CC_LINUX_AMD64 ?= x86_64-linux-gnu-gcc
+CC_LINUX_ARM64 ?= aarch64-linux-gnu-gcc
+CC_DARWIN_AMD64 ?= o64-clang
+CC_DARWIN_ARM64 ?= oa64-clang
+CC_WINDOWS_AMD64 ?= x86_64-w64-mingw32-gcc
+
 build-all:
+	docker run --rm \
+		--entrypoint make \
+		-v "$(CURDIR)":/work -w /work \
+		-e GOFLAGS=-buildvcs=false \
+		$(CROSS_IMAGE) build-all-native VERSION="$(VERSION)"
+
+build-all-native:
 	mkdir -p $(BUILD_DIR)
-	GOOS=linux GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(APP_NAME)-linux-amd64 main.go
-	GOOS=darwin GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(APP_NAME)-darwin-amd64 main.go
-	GOOS=darwin GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(APP_NAME)-darwin-arm64 main.go
-	GOOS=windows GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(APP_NAME)-windows-amd64.exe main.go
+	CGO_ENABLED=1 CC=$(CC_LINUX_AMD64) GOOS=linux GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(APP_NAME)-linux-amd64 main.go
+	CGO_ENABLED=1 CC=$(CC_LINUX_ARM64) GOOS=linux GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(APP_NAME)-linux-arm64 main.go
+	CGO_ENABLED=1 CC=$(CC_DARWIN_AMD64) GOOS=darwin GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(APP_NAME)-darwin-amd64 main.go
+	CGO_ENABLED=1 CC=$(CC_DARWIN_ARM64) GOOS=darwin GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(APP_NAME)-darwin-arm64 main.go
+	CGO_ENABLED=1 CC=$(CC_WINDOWS_AMD64) GOOS=windows GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(APP_NAME)-windows-amd64.exe main.go
 
 # Run tests
 test:
@@ -102,7 +123,8 @@ docker-build:
 help:
 	@echo "Available targets:"
 	@echo "  build         - Build the application"
-	@echo "  build-all     - Build for multiple platforms"
+	@echo "  build-all     - Build all release platforms (CGO, runs in the goreleaser-cross image)"
+	@echo "  build-all-native - Build all release platforms with local cross compilers"
 	@echo "  test          - Run tests"
 	@echo "  test-coverage - Run tests with coverage"
 	@echo "  fmt           - Format code"

@@ -301,3 +301,29 @@ func TestConfigCompleteStructure(t *testing.T) {
 		t.Errorf("Expected connection limit 10, got %d", user.ConnectionLimit)
 	}
 }
+
+func TestPermissionsJSONRoundTrip(t *testing.T) {
+	input := `{"users":[{"username":"u","permissions":["GRANT SELECT ON TABLE t TO u"]}],` +
+		`"groups":[{"name":"g","permissions":["GRANT USAGE ON SCHEMA s TO g"]}]}`
+
+	var cfg Config
+	if err := json.Unmarshal([]byte(input), &cfg); err != nil {
+		t.Fatalf("Failed to unmarshal config: %v", err)
+	}
+	if len(cfg.Users[0].Permissions) != 1 || len(cfg.Groups[0].Permissions) != 1 {
+		t.Fatalf("permissions were not decoded: %+v", cfg)
+	}
+
+	// permissions is omitted when empty
+	data, err := json.Marshal(UserConfig{Username: "u"})
+	if err != nil {
+		t.Fatalf("Failed to marshal user: %v", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("Failed to unmarshal user JSON: %v", err)
+	}
+	if _, ok := m["permissions"]; ok {
+		t.Errorf("empty permissions should be omitted: %s", data)
+	}
+}
