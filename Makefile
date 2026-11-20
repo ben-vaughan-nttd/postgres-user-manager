@@ -1,4 +1,4 @@
-.PHONY: all build build-all build-all-native check-go-version test-go-version check clean test fmt vet lint run-example install deps
+.PHONY: all build build-all build-all-native check-go-version test-go-version check clean test fmt vet lint vuln run-example install deps
 
 # Build configuration
 APP_NAME := postgres-user-manager
@@ -14,6 +14,7 @@ GOCLEAN := $(GOCMD) clean
 GOGET := $(GOCMD) get
 GOFMT := $(GOCMD) fmt
 GOVET := $(GOCMD) vet
+GOTOOL := $(GOCMD) tool -modfile=tools/go.mod
 
 # Default target
 all: deps fmt check test build
@@ -102,15 +103,13 @@ run-example:
 	@echo "\nShowing help..."
 	@./$(BUILD_DIR)/$(APP_NAME) --help
 
-# Development setup
-dev-setup:
-	@echo "Setting up development environment..."
-	$(GOGET) -u golang.org/x/tools/cmd/goimports
-	$(GOGET) -u github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-
-# Lint code (requires golangci-lint)
+# Lint code
 lint:
-	golangci-lint run
+	$(GOTOOL) golangci-lint run
+
+# Scan for known vulnerabilities
+vuln:
+	$(GOTOOL) govulncheck ./...
 
 # Quick development build and test
 dev: fmt vet test build
@@ -131,12 +130,12 @@ help:
 	@echo "  vet           - Vet code"
 	@echo "  check-go-version - Verify Docker and Go toolchain versions"
 	@echo "  test-go-version  - Test Go version validation failure paths"
-	@echo "  lint          - Lint code (requires golangci-lint)"
+	@echo "  lint          - Lint code (golangci-lint)"
+	@echo "  vuln          - Scan for known vulnerabilities (govulncheck)"
 	@echo "  install       - Install the application"
 	@echo "  clean         - Clean build artifacts"
 	@echo "  deps          - Install dependencies"
 	@echo "  run-example   - Build and run example commands"
-	@echo "  dev-setup     - Set up development environment"
 	@echo "  dev           - Quick development build and test"
 	@echo "  docker-build  - Build Docker image"
 	@echo "  help          - Show this help"

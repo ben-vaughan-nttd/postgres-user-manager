@@ -22,12 +22,21 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
 
       - name: Install dependencies
         run: go mod download
 
       - name: Run validation checks
         run: make check
+
+      - name: Run vulnerability scan
+        run: make vuln
+
+      - name: Run linter
+        run: make lint
 
       - name: Run tests
         run: go test -v ./... 
