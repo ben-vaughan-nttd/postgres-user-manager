@@ -1,43 +1,46 @@
-# Multi-stage build
-# The builder (golang:<version>, Debian trixie) and the runtime image must share
-# a glibc: pg_query_go requires CGO, so the binary is dynamically linked.
+# Multi-stage build.
+# The builder (golang:<version>, Debian trixie) and runtime-base (debian:trixie-slim)
+# must share a glibc: pg_query_go requires CGO, so the binary is dynamically linked.
 FROM golang:1.27.4 AS builder
 
-# Set working directory
-WORKDIR /app
+WORKDIR /src
 
-# Copy go mod files
 COPY go.mod go.sum ./
-
-# Download dependencies
 RUN go mod download
 
-# Copy source code
-COPY . .
+COPY main.go ./
+COPY cmd ./cmd
+COPY internal ./internal
 
-# Build the application (CGO is required by pg_query_go)
-RUN CGO_ENABLED=1 GOOS=linux go build -o postgres-user-manager main.go
+RUN CGO_ENABLED=1 GOOS=linux go build -trimpath -o /out/postgres-user-manager .
 
-# Final stage - Debian trixie slim matches the builder's glibc
-FROM debian:trixie-slim
+# Shared runtime base stage - Debian trixie slim matches the builder's glibc.
+FROM debian:trixie-slim AS runtime-base
 
-# Install ca-certificates for HTTPS calls
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends ca-certificates \
+	&& rm -rf /var/lib/apt/lists/* \
+	&& useradd --system --no-create-home --home-dir /app --shell /usr/sbin/nologin appuser \
+	&& install -d -m 0755 /app
 
-WORKDIR /root/
+WORKDIR /app
 
-# Copy the binary from builder stage
-COPY --from=builder /app/postgres-user-manager .
+# Release stage used by GoReleaser (--target=release) with a pre-built binary.
+FROM runtime-base AS release
 
-# Copy example configuration
-COPY config.example.json .
+COPY --chmod=0755 postgres-user-manager /usr/local/bin/postgres-user-manager
 
-# Create a non-root user
-RUN useradd -r -s /bin/false appuser
 USER appuser
 
-# Set entrypoint
-ENTRYPOINT ["./postgres-user-manager"]
+ENTRYPOINT ["/usr/local/bin/postgres-user-manager"]
+CMD ["--help"]
 
-# Default command
+# Default runtime stage for standalone source builds (docker build .).
+FROM runtime-base AS runtime
+
+COPY --from=builder --chmod=0755 /out/postgres-user-manager /usr/local/bin/postgres-user-manager
+
+USER appuser
+
+ENTRYPOINT ["/usr/local/bin/postgres-user-manager"]
 CMD ["--help"]

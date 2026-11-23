@@ -1,4 +1,4 @@
-.PHONY: all build build-all build-all-native check-go-version test-go-version check clean test fmt vet lint vuln run-example install deps
+.PHONY: all build build-all build-all-native check-go-version test-go-version check clean test test-docker test-goreleaser fmt vet lint vuln run-example install deps
 
 # Build configuration
 APP_NAME := postgres-user-manager
@@ -71,6 +71,14 @@ build-all-native:
 test:
 	$(GOTEST) -v ./...
 
+# Run Docker context and runtime image tests
+test-docker:
+	@scripts/test-docker-image.sh
+
+# Run GoReleaser config and snapshot release tests
+test-goreleaser:
+	@scripts/test-goreleaser.sh
+
 # Run tests with coverage
 test-coverage:
 	$(GOTEST) -v -coverprofile=coverage.out ./...
@@ -116,7 +124,7 @@ dev: fmt vet test build
 
 # Docker build
 docker-build:
-	docker build -t $(APP_NAME):$(VERSION) .
+	docker build --load -t $(APP_NAME):$(VERSION) .
 
 # Help
 help:
@@ -125,6 +133,8 @@ help:
 	@echo "  build-all     - Build all release platforms (CGO, runs in the goreleaser-cross image)"
 	@echo "  build-all-native - Build all release platforms with local cross compilers"
 	@echo "  test          - Run tests"
+	@echo "  test-docker   - Test Docker build context, layers, and runtime image"
+	@echo "  test-goreleaser - Test GoReleaser config and snapshot release artifacts"
 	@echo "  test-coverage - Run tests with coverage"
 	@echo "  fmt           - Format code"
 	@echo "  vet           - Vet code"

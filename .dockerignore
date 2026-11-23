@@ -1,0 +1,58 @@
+# Default-deny Docker build context allowlist.
+# Only files required by the Dockerfile builder stage are included.
+*
+
+# Allow Go module definitions and production Go sources.
+!go.mod
+!go.sum
+!main.go
+!cmd/
+!cmd/**
+!internal/
+!internal/**
+
+# Explicitly re-exclude test files, fixtures, VCS metadata, secrets, and local artifacts
+# even if they appear under allowed directories.
+**/*_test.go
+**/testdata/
+**/testdata/**
+.git
+.git/**
+.env
+.env.*
+**/.env
+**/.env.*
+config.json
+**/config.json
+config.example.json
+**/*.json
+**/*.md
+**/*.pem
+**/*.key
+**/*.crt
+**/*.sql
+**/*.yaml
+**/*.yml
+**/*.toml
+**/*.sh
+build/
+dist/
+tmp/
+temp/
+postgres-user-manager
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.*
+*.coverprofile
+profile.cov
+*.log
+*.swp
+*.swo
+*~
+.DS_Store
+.idea/
+.vscode/

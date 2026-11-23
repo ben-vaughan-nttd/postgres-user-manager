@@ -2,6 +2,9 @@ project_name: postgres-user-manager
 
 version: 2
 
+env:
+  - GITHUB_REPOSITORY_OWNER={{ if index .Env "GITHUB_REPOSITORY_OWNER" }}{{ .Env.GITHUB_REPOSITORY_OWNER }}{{ else }}local{{ end }}
+
 before:
   hooks:
     - go mod tidy
@@ -79,10 +82,12 @@ changelog:
 
 dockers:
   - image_templates:
-    - "ghcr.io/{{.Env.GITHUB_REPOSITORY_OWNER}}/{{.ProjectName}}:{{ .Version }}"
-    - "ghcr.io/{{.Env.GITHUB_REPOSITORY_OWNER}}/{{.ProjectName}}:latest"
+    - "ghcr.io/{{ tolower .Env.GITHUB_REPOSITORY_OWNER }}/{{ .ProjectName }}:{{ .Version }}"
+    - "ghcr.io/{{ tolower .Env.GITHUB_REPOSITORY_OWNER }}/{{ .ProjectName }}:latest"
     dockerfile: Dockerfile
     build_flag_templates:
+    - --target=release
+    - --platform=linux/amd64
     - --label=org.opencontainers.image.created={{.Date}}
     - --label=org.opencontainers.image.title={{.ProjectName}}
     - --label=org.opencontainers.image.revision={{.FullCommit}}

@@ -111,7 +111,7 @@ clean_build() {
 # Build Docker image
 build_docker() {
     print_status "Building Docker image..."
-    docker build -t postgres-user-manager:latest .
+    docker build --load -t postgres-user-manager:latest .
     print_status "Docker build complete!"
 }
 
