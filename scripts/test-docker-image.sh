@@ -4,8 +4,9 @@
 # hygiene, runtime hardening (non-root appuser, read-only /app and binary),
 # and --target=release parity with the default source-built image.
 #
-# All work runs inside an isolated temporary copy under <repo>/tmp so any local
-# developer files (.env, config.json) in the repository root remain untouched.
+# All work runs inside an isolated temporary copy under <repo>/tmp seeded with
+# explicit repository inputs so any local developer files (.env, config.json,
+# etc.) in the repository root remain untouched and are never staged.
 
 set -eu
 
@@ -18,6 +19,7 @@ ctx_dockerfile="$temp_dir/Dockerfile.ctx"
 ctx_image="pum-docker-ctx-test:$$"
 neg_ctx_image="pum-docker-neg-ctx-test:$$"
 neg_env_ctx_image="pum-docker-neg-env-ctx-test:$$"
+neg_subdir_ctx_image="pum-docker-neg-subdir-ctx-test:$$"
 builder_image="pum-docker-builder-test:$$"
 runtime_image="pum-docker-runtime-test:$$"
 release_image="pum-docker-release-test:$$"
@@ -31,6 +33,7 @@ cleanup() {
 		"$ctx_image" \
 		"$neg_ctx_image" \
 		"$neg_env_ctx_image" \
+		"$neg_subdir_ctx_image" \
 		"$builder_image" \
 		"$runtime_image" \
 		"$release_image" >/dev/null 2>&1 || true
@@ -43,27 +46,26 @@ copy_repo() {
 	src=$1
 	dst=$2
 	mkdir -p "$dst"
-	tar -C "$src" \
-		--exclude='.git' \
-		--exclude='./tmp' \
-		--exclude='./dist' \
-		--exclude='./build' \
-		--exclude='./postgres-user-manager' \
-		--exclude='./.env' \
-		--exclude='./.env.local' \
-		--exclude='./config.json' \
-		-cf - . | tar -C "$dst" -xf -
+	for top_file in .dockerignore Dockerfile config.example.json go.mod go.sum main.go; do
+		cp "$src/$top_file" "$dst/$top_file"
+	done
+	(cd "$src" && find cmd internal -type f -name '*.go' | sort) | while IFS= read -r rel_path; do
+		mkdir -p "$dst/$(dirname -- "$rel_path")"
+		cp "$src/$rel_path" "$dst/$rel_path"
+	done
 }
 
 plant_sentinels() {
 	target=$1
 	printf 'SENTINEL_ENV_SECRET_26=root_env\n' > "$target/.env"
 	printf 'SENTINEL_ENV_SECRET_26=root_env_local\n' > "$target/.env.local"
-	mkdir -p "$target/internal/config" "$target/internal/database"
+	mkdir -p "$target/cmd" "$target/internal/config" "$target/internal/database"
 	printf 'SENTINEL_ENV_SECRET_26=nested_env\n' > "$target/internal/config/.env"
 	printf '{"sentinel":"SENTINEL_CONFIG_SECRET_26_ROOT"}\n' > "$target/config.json"
 	printf '{"sentinel":"SENTINEL_CONFIG_SECRET_26_NESTED"}\n' > "$target/internal/config/config.json"
 	printf '{"sentinel":"SENTINEL_CONFIG_SECRET_26_EXTRA"}\n' > "$target/internal/config/secret.json"
+	printf 'SENTINEL_PKCS12_SECRET_26\n' > "$target/internal/config/credentials.p12"
+	printf 'SENTINEL_UNRECOGNIZED_SECRET_26\n' > "$target/cmd/extra.unrecognized"
 	printf 'SENTINEL_DOCS_SECRET_26\n' > "$target/internal/database/NOTES.md"
 	mkdir -p "$target/build" "$target/dist" "$target/.git" "$target/.vscode"
 	printf 'SENTINEL_BUILD_SECRET_26\n' > "$target/build/sentinel"
@@ -80,41 +82,19 @@ verify_context() {
 	ctx_list="$temp_dir/ctx-files.txt"
 
 	docker build --load -q -f "$ctx_dockerfile" -t "$ctx_img" "$ctx_dir" >/dev/null
-	docker run --rm "$ctx_img" find /ctx -mindepth 1 | sed 's|^/ctx/||' | sort > "$ctx_list"
+	docker run --rm "$ctx_img" find /ctx -type f | sed 's|^/ctx/||' | sort > "$ctx_list"
 
-	for forbidden in \
-		.env \
-		.env.local \
-		.env.example \
-		internal/config/.env \
-		config.json \
-		internal/config/config.json \
-		internal/config/secret.json \
-		internal/database/NOTES.md \
-		config.example.json \
-		build/sentinel \
-		dist/sentinel \
-		coverage.out \
-		.git \
-		.git/sentinel \
-		.vscode \
-		.vscode/settings.json \
-		postgres-user-manager \
-		tools \
-		scripts \
-		Makefile \
-		README.md
-	do
-		if grep -Fxq "$forbidden" "$ctx_list"; then
-			printf 'Context check failed: forbidden path present: %s\n' "$forbidden" >&2
+	while IFS= read -r ctx_file; do
+		[ -n "$ctx_file" ] || continue
+		if ! printf '%s\n' "$ctx_file" | grep -Eq '^(go\.mod|go\.sum|main\.go|(cmd|internal)/.*\.go)$'; then
+			printf 'Context check failed: disallowed file entered build context: %s\n' "$ctx_file" >&2
 			return 1
 		fi
-	done
-
-	if grep -Eq '(^|/)[^/]*_test\.go$' "$ctx_list"; then
-		printf 'Context check failed: test file entered build context\n' >&2
-		return 1
-	fi
+		if printf '%s\n' "$ctx_file" | grep -Eq '(^|/)[^/]*_test\.go$'; then
+			printf 'Context check failed: test file entered build context: %s\n' "$ctx_file" >&2
+			return 1
+		fi
+	done < "$ctx_list"
 
 	for required in \
 		go.mod \
@@ -175,7 +155,7 @@ scan_image_layers() {
 		layer_count=$((layer_count + 1))
 
 		tar -tf "$layer_path" > "$layer_files"
-		if grep -Eq '(^|/)(\.env(\.[^/]*)?|config\.json|config\.example\.json|secret\.json|NOTES\.md|coverage\.out|go\.mod|main\.go|[^/]*_test\.go|\.vscode(/|$)|build/sentinel$|dist/sentinel$|\.git/sentinel$)' "$layer_files"; then
+		if grep -Eq '(^|/)(\.env(\.[^/]*)?|config\.json|config\.example\.json|secret\.json|credentials\.p12|extra\.unrecognized|NOTES\.md|coverage\.out|go\.mod|main\.go|[^/]*_test\.go|\.vscode(/|$)|build/sentinel$|dist/sentinel$|\.git/sentinel$)' "$layer_files"; then
 			printf 'Layer scan failed (%s): forbidden filename found in layer %s\n' "$img" "$layer_rel" >&2
 			exit 1
 		fi
@@ -298,6 +278,8 @@ cat > "$sentinel_tokens_file" <<'EOF'
 SENTINEL_ENV_SECRET_26
 SENTINEL_CONFIG_SECRET_26
 SENTINEL_CONFIG_SECRET_26_EXTRA
+SENTINEL_PKCS12_SECRET_26
+SENTINEL_UNRECOGNIZED_SECRET_26
 SENTINEL_DOCS_SECRET_26
 SENTINEL_BUILD_SECRET_26
 SENTINEL_DIST_SECRET_26
@@ -338,29 +320,38 @@ if verify_context "$neg_env_repo" "$neg_env_ctx_image" 2>/dev/null; then
 fi
 printf 'Negative self-test (appended !.env) passed\n'
 
+printf 'Running negative self-test with !internal/** appended to .dockerignore...\n'
+neg_subdir_repo="$temp_dir/neg-subdir-repo"
+mkdir -p "$neg_subdir_repo"
+tar -C "$temp_repo" -cf - . | tar -C "$neg_subdir_repo" -xf -
+printf '\n!internal/**\n' >> "$neg_subdir_repo/.dockerignore"
+if verify_context "$neg_subdir_repo" "$neg_subdir_ctx_image" 2>/dev/null; then
+	printf 'Negative self-test failed: context check passed when !internal/** was appended\n' >&2
+	exit 1
+fi
+printf 'Negative self-test (appended !internal/**) passed\n'
+
 printf 'Building builder stage with sentinels present and inspecting /src and /out...\n'
 docker build --load --target=builder -t "$builder_image" "$temp_repo"
 docker run --rm \
 	-v "$sentinel_tokens_file:/tmp/sentinel-tokens.txt:ro" \
 	--entrypoint sh "$builder_image" -eu -c '
-	found=$(find /src \( \
-		-name "*_test.go" -o \
-		-name "*.json" -o \
-		-name "*.md" -o \
-		-name ".env" -o \
-		-name ".env.*" -o \
-		-name "Dockerfile" -o \
-		-name "Makefile" -o \
-		-name "coverage.out" -o \
-		-name "sentinel" -o \
-		-name "postgres-user-manager" -o \
-		-name ".git" -o \
-		-name ".vscode" \
-	\))
-	if [ -n "$found" ]; then
-		printf "unexpected files found in builder /src:\n%s\n" "$found" >&2
+	find /src -type f | sed "s|^/src/||" | sort > /tmp/src-files.txt
+	if [ ! -s /tmp/src-files.txt ]; then
+		echo "builder /src is unexpectedly empty" >&2
 		exit 1
 	fi
+	while IFS= read -r src_file; do
+		[ -n "$src_file" ] || continue
+		if ! printf "%s\n" "$src_file" | grep -Eq "^(go\.mod|go\.sum|main\.go|(cmd|internal)/.*\.go)$"; then
+			printf "unexpected file found in builder /src: %s\n" "$src_file" >&2
+			exit 1
+		fi
+		if printf "%s\n" "$src_file" | grep -Eq "(^|/)[^/]*_test\.go$"; then
+			printf "test file found in builder /src: %s\n" "$src_file" >&2
+			exit 1
+		fi
+	done < /tmp/src-files.txt
 	if LC_ALL=C grep -rFq -f /tmp/sentinel-tokens.txt /src /out; then
 		matched_token=""
 		while IFS= read -r token; do
