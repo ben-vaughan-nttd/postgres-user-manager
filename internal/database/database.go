@@ -2,6 +2,7 @@ package database
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -97,16 +98,17 @@ func (m *Manager) CreateUser(user *structs.UserConfig) error {
 		return nil
 	}
 
-	// Build CREATE USER query based on authentication method
-	query := m.buildCreateUserQuery(user)
-
 	if m.dryRun {
-		m.logger.WithField("query", query).Info(msgDryRunExecuteQuery)
+		redactedQuery := m.buildCreateUserQuery(user, true)
+		m.logger.WithField("query", redactedQuery).Info(msgDryRunExecuteQuery)
 		return nil
 	}
 
+	// Build CREATE USER query based on authentication method
+	query := m.buildCreateUserQuery(user, false)
+
 	if _, err := m.db.Exec(query); err != nil {
-		return fmt.Errorf("failed to create user %s: %w", user.Username, err)
+		return fmt.Errorf("failed to create user %s: %w", user.Username, m.redactPasswordFromError(err, user.Password))
 	}
 
 	// For IAM authentication, grant rds_iam role
@@ -120,21 +122,26 @@ func (m *Manager) CreateUser(user *structs.UserConfig) error {
 	return nil
 }
 
-// buildCreateUserQuery builds the appropriate CREATE USER query based on auth method
-func (m *Manager) buildCreateUserQuery(user *structs.UserConfig) string {
+// buildCreateUserQuery builds the appropriate CREATE USER query based on auth method.
+// When redactPassword is true, any password is replaced with [REDACTED] for safe logging.
+func (m *Manager) buildCreateUserQuery(user *structs.UserConfig, redactPassword bool) string {
 	query := fmt.Sprintf("CREATE USER %s", m.quoteIdentifier(user.Username))
-	
+
 	// Set authentication method specific options
 	switch user.AuthMethod {
 	case "iam":
 		// For IAM authentication, no password is needed
 		// The user will authenticate using AWS IAM
 		m.logger.WithField("username", user.Username).Info("Creating user for IAM authentication (no password)")
-		
+
 	default:
 		// Traditional password authentication
 		if user.Password != "" {
-			query += fmt.Sprintf(" WITH PASSWORD '%s'", m.escapeString(user.Password))
+			if redactPassword {
+				query += " WITH PASSWORD '[REDACTED]'"
+			} else {
+				query += fmt.Sprintf(" WITH PASSWORD '%s'", m.escapeString(user.Password))
+			}
 		}
 	}
 	
@@ -534,4 +541,30 @@ func (m *Manager) quoteIdentifier(name string) string {
 // escapeString safely escapes string literals
 func (m *Manager) escapeString(s string) string {
 	return strings.ReplaceAll(s, "'", "''")
+}
+
+// redactPasswordFromError scrubs raw or SQL-escaped occurrences of password
+// from err. When scrubbing occurs, a new error is returned without wrapping
+// the original error so neither Error() nor Unwrap() can expose the secret.
+func (m *Manager) redactPasswordFromError(err error, password string) error {
+	if err == nil || password == "" {
+		return err
+	}
+
+	msg := err.Error()
+	escaped := m.escapeString(password)
+
+	redacted := msg
+	if escaped != password && strings.Contains(redacted, escaped) {
+		redacted = strings.ReplaceAll(redacted, escaped, "[REDACTED]")
+	}
+	if strings.Contains(redacted, password) {
+		redacted = strings.ReplaceAll(redacted, password, "[REDACTED]")
+	}
+
+	if redacted != msg {
+		return errors.New(redacted)
+	}
+
+	return err
 }
