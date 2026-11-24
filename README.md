@@ -347,15 +347,20 @@ postgres-user-manager sync --config config.json --verbose
 Create a single user with specific settings:
 
 ```bash
-# Basic user creation (password auth)
+# Basic user creation (password auth, no password set)
 postgres-user-manager create-user myuser
 
-# User with password and groups
-postgres-user-manager create-user myuser \
-  --password "secure_pass" \
-  --groups "app_group,read_only" \
-  --privileges "CONNECT" \
-  --databases "myapp_db"
+# User with password read from standard input
+printf '%s\n' "$MANAGED_USER_PASSWORD" |
+  postgres-user-manager create-user myuser --password-stdin
+
+# User with password, groups, and privileges
+printf '%s\n' "$MANAGED_USER_PASSWORD" |
+  postgres-user-manager create-user myuser \
+    --password-stdin \
+    --groups "app_group,read_only" \
+    --privileges "CONNECT" \
+    --databases "myapp_db"
 
 # IAM authenticated user for AWS RDS
 postgres-user-manager create-user iam_user \

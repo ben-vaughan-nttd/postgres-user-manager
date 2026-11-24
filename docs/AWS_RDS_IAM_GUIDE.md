@@ -153,11 +153,12 @@ postgres-user-manager create-user iam_user \
   --iam-role "arn:aws:iam::123456789012:role/RDSAccessRole" \
   --description "IAM authenticated user"
 
-# Create user with password authentication
-postgres-user-manager create-user pwd_user \
-  --auth-method password \
-  --password "secure_password" \
-  --groups "app_group"
+# Create user with password authentication (read password from standard input)
+printf '%s\n' "$MANAGED_USER_PASSWORD" |
+  postgres-user-manager create-user pwd_user \
+    --auth-method password \
+    --password-stdin \
+    --groups "app_group"
 ```
 
 ### Synchronizing Configuration
@@ -183,8 +184,9 @@ Users created with IAM authentication automatically receive the `rds_iam` role, 
 ### 3. Password Handling
 
 - Users with `auth_method: "iam"` do not need passwords
-- Passwords specified for IAM users are ignored
-- Traditional password users still require passwords
+- On `create-user`, combining `--auth-method iam` with `--password-stdin` is rejected with an error
+- During `sync`, a `password` field specified for an IAM user in `config.json` is ignored
+- Traditional password users still use passwords (via `--password-stdin` on `create-user` or `password` in `config.json`)
 
 ### 4. Connection Limits
 
